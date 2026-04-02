@@ -5,9 +5,8 @@
 #include <map>
 
 #include "polygon_utils.hpp"
-namespace {
 
-double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
+static double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
     Vertex* A = E->origin;
     Vertex* B = E->nextEdge->origin;
 
@@ -75,7 +74,7 @@ struct EdgeComparator {
 using ActiveEdges = std::map<HalfEdge*, Vertex*, EdgeComparator>;
 using ActiveEdgeIterator = ActiveEdges::iterator;
 
-ActiveEdgeIterator findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges){
+static ActiveEdgeIterator findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges){
     // Making the dummyEdge for doing Binary Search
     Vertex vTop = {M->x, M->y - 1.0, nullptr};
     Vertex vBot = {M->x, M->y + 1.0, nullptr};
@@ -94,7 +93,7 @@ ActiveEdgeIterator findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges){
     return activeEdges.end();
 }
 
-void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
+static void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
     // We want to bridge M and Target
 
     // Bridging outgoing and incoming edges of M
@@ -125,9 +124,6 @@ void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
     M->originatingEdge = bridge;
     Target->originatingEdge = bridgeTwin;
 }
-
-}  // namespace
-
 void mergeHoles(Face* gallery){
     // Getting holes by storing the topMostVertices of those holes
     std::vector<Vertex*> topmostVertices = getTopmostVertices(gallery);

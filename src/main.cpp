@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "hole_merger.hpp"
 #include "parser.hpp"
 
 int main() {
@@ -8,6 +9,7 @@ int main() {
     
     while(T--){
         Face* gallery = parseSingleGallery();
+        mergeHoles(gallery);
         
         
     }
