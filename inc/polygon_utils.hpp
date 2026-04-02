@@ -8,6 +8,7 @@
 void addVertices(HalfEdge* startEdge, std::vector<Vertex*>& vertices);
 std::vector<Vertex*> getMergedPolygonVertices(Face* gallery);
 std::vector<Vertex*> getTopmostVertices(Face* gallery);
+std::size_t getTotalVertexCount(Face* gallery);
 
 template <typename CompareFunc>
 std::vector<Vertex*> getVerticesSorted(Face* gallery, CompareFunc comp) {

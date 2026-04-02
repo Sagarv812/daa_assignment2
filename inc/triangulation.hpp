@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <iosfwd>
 #include <vector>
 
 #include "dcel.hpp"
@@ -16,6 +15,13 @@ enum class VertexCategory {
 };
 
 using Triangle = std::array<Vertex*, 3>;
+using TriangleIndices = std::array<int, 3>;
 
-std::vector<Triangle> triangulateGallery(Face* gallery);
-void printTriangles(const std::vector<Triangle>& triangles, std::ostream& out);
+struct TriangulationResult {
+    std::vector<Triangle> triangles;
+    std::vector<TriangleIndices> triangleIndices;
+    std::vector<Vertex*> occurrenceVertices;
+};
+
+TriangulationResult triangulateGallery(Face* gallery);
+void printTriangles(const std::vector<Triangle>& triangles);

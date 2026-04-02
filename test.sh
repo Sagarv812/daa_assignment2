@@ -7,4 +7,4 @@ PYTHON_BIN="${PYTHON:-python3}"
 
 make
 ./build/art_gallery < "$INPUT_FILE" | tee "$OUTPUT_FILE"
-"$PYTHON_BIN" visualize.py "$INPUT_FILE" --solver-output "$OUTPUT_FILE" --output-dir plots --format png
+"$PYTHON_BIN" visualize.py "$INPUT_FILE" "$OUTPUT_FILE" --output-dir plots --format png

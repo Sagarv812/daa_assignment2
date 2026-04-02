@@ -63,3 +63,21 @@ std::vector<Vertex*> getTopmostVertices(Face* gallery){
 
     return topmostVertices;
 }
+
+std::size_t getTotalVertexCount(Face* gallery){
+    std::size_t totalVertices = 0;
+
+    if(gallery->boundaryEdge != nullptr){
+        std::vector<Vertex*> outerVertices;
+        addVertices(gallery->boundaryEdge, outerVertices);
+        totalVertices += outerVertices.size();
+    }
+
+    for(HalfEdge* holeEdgeStart : gallery->InnerComponents){
+        std::vector<Vertex*> holeVertices;
+        addVertices(holeEdgeStart, holeVertices);
+        totalVertices += holeVertices.size();
+    }
+
+    return totalVertices;
+}

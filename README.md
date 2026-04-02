@@ -1,4 +1,4 @@
-# daa_assignment2
+# DAA Assignment 2 - Art Gallery Problem
 
 Current workspace layout:
 
@@ -19,11 +19,11 @@ Build and run:
 If `matplotlib` is installed in a specific Python environment, you can run:
 
 ```bash
-PYTHON=~/aiml_lab/.venv/bin/python3 ./test.sh tests/mixed_suite.in
+PYTHON=<path_to_env> ./test.sh tests/mixed_suite.in
 ```
 
 `test.sh` now:
-- builds the C++ solver
+- builds the art gallery solver
 - runs it on the given input file
 - saves the solver output in `solver_output.txt`
 - generates plot files in `plots/`
@@ -31,5 +31,5 @@ PYTHON=~/aiml_lab/.venv/bin/python3 ./test.sh tests/mixed_suite.in
 Generate plots:
 
 ```bash
-python3 visualize.py tests/mixed_suite.in --output-dir plots --format png
+python3 visualize.py tests/mixed_suite.in solver_output.txt --output-dir plots --format png
 ```

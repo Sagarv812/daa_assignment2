@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import subprocess
 from pathlib import Path
 from typing import List, Sequence, Tuple
 
@@ -15,6 +14,7 @@ Point = Tuple[float, float]
 Triangle = Tuple[Point, Point, Point]
 Polygon = List[Point]
 Case = Tuple[Polygon, List[Polygon]]
+GuardList = List[Point]
 
 
 def parse_input_file(path: Path) -> List[Case]:
@@ -49,14 +49,20 @@ def parse_input_file(path: Path) -> List[Case]:
     return cases
 
 
-def parse_program_output(output: str, case_count: int) -> List[List[Triangle]]:
+def expected_triangle_count(case: Case) -> int:
+    outer, holes = case
+    total_vertices = len(outer) + sum(len(hole) for hole in holes)
+    return total_vertices + 2 * len(holes) - 2
+
+
+def parse_program_output(output: str, cases: Sequence[Case]) -> Tuple[List[List[Triangle]], List[GuardList]]:
     tokens = output.split()
     pos = 0
     all_triangles: List[List[Triangle]] = []
+    all_guards: List[GuardList] = []
 
-    for _ in range(case_count):
-        triangle_count = int(tokens[pos])
-        pos += 1
+    for case in cases:
+        triangle_count = expected_triangle_count(case)
         triangles: List[Triangle] = []
         for _ in range(triangle_count):
             triangle = (
@@ -68,34 +74,19 @@ def parse_program_output(output: str, case_count: int) -> List[List[Triangle]]:
             triangles.append(triangle)
         all_triangles.append(triangles)
 
-    return all_triangles
+        guard_count = int(tokens[pos])
+        pos += 1
+        guards: GuardList = []
+        for _ in range(guard_count):
+            guards.append((float(tokens[pos]), float(tokens[pos + 1])))
+            pos += 2
+        all_guards.append(guards)
+
+    return all_triangles, all_guards
 
 
-def run_solver(repo_root: Path, input_path: Path, binary: str) -> str:
-    subprocess.run(
-        ["make", "-C", str(repo_root)],
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-
-    result = subprocess.run(
-        [str(repo_root / binary)],
-        input=input_path.read_text(),
-        text=True,
-        capture_output=True,
-        check=True,
-        cwd=repo_root,
-    )
-    return result.stdout
-
-
-def load_program_output(repo_root: Path, input_path: Path, binary: str, output_path: str) -> str:
-    if output_path:
-        resolved_output = (repo_root / output_path).resolve() if not Path(output_path).is_absolute() else Path(output_path)
-        return resolved_output.read_text()
-
-    return run_solver(repo_root, input_path, binary)
+def load_program_output(output_path: str) -> str:
+    return Path(output_path).read_text()
 
 
 def add_polygon_outline(ax, polygon: Sequence[Point], facecolor: str, edgecolor: str, linewidth: float) -> None:
@@ -133,7 +124,21 @@ def add_vertices(ax, polygons: Sequence[Sequence[Point]]) -> None:
         ax.scatter(xs, ys, c="#1b1b1b", s=18, zorder=5)
 
 
-def configure_axes(ax, outer: Polygon, holes: Sequence[Polygon], triangles: Sequence[Triangle], title: str) -> None:
+def add_guards(ax, guards: GuardList) -> None:
+    if not guards:
+        return
+
+    xs = [x for x, _ in guards]
+    ys = [y for _, y in guards]
+    ax.scatter(xs, ys, c="#c62828", s=130, marker="*", edgecolors="#5d0f0f", linewidths=0.8, zorder=6)
+
+
+def configure_axes(ax,
+                   outer: Polygon,
+                   holes: Sequence[Polygon],
+                   triangles: Sequence[Triangle],
+                   guards: GuardList,
+                   title: str) -> None:
     xs = [x for x, _ in outer]
     ys = [y for _, y in outer]
 
@@ -145,6 +150,10 @@ def configure_axes(ax, outer: Polygon, holes: Sequence[Polygon], triangles: Sequ
         for x, y in triangle:
             xs.append(x)
             ys.append(y)
+
+    for x, y in guards:
+        xs.append(x)
+        ys.append(y)
 
     min_x = min(xs)
     max_x = max(xs)
@@ -161,7 +170,12 @@ def configure_axes(ax, outer: Polygon, holes: Sequence[Polygon], triangles: Sequ
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.35)
 
 
-def save_case_plot(output_path: Path, case_index: int, outer: Polygon, holes: Sequence[Polygon], triangles: Sequence[Triangle]) -> None:
+def save_case_plot(output_path: Path,
+                   case_index: int,
+                   outer: Polygon,
+                   holes: Sequence[Polygon],
+                   triangles: Sequence[Triangle],
+                   guards: GuardList) -> None:
     fig, ax = plt.subplots(figsize=(8, 8))
     fig.patch.set_facecolor("#f8f5ef")
     ax.set_facecolor("#fcfaf5")
@@ -174,7 +188,15 @@ def save_case_plot(output_path: Path, case_index: int, outer: Polygon, holes: Se
 
     add_polygon_outline(ax, outer, facecolor="none", edgecolor="#1f1f1f", linewidth=2.5)
     add_vertices(ax, [outer, *holes])
-    configure_axes(ax, outer, holes, triangles, f"Case {case_index}: triangles={len(triangles)}")
+    add_guards(ax, guards)
+    configure_axes(
+        ax,
+        outer,
+        holes,
+        triangles,
+        guards,
+        f"Case {case_index}: triangles={len(triangles)}, guards={len(guards)}",
+    )
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
@@ -184,20 +206,11 @@ def save_case_plot(output_path: Path, case_index: int, outer: Polygon, holes: Se
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate matplotlib plots for triangulated gallery inputs.")
     parser.add_argument("input", help="Path to an assignment-format input file.")
+    parser.add_argument("solver_output", help="Path to a file containing the solver output.")
     parser.add_argument(
         "--output-dir",
         default="plots",
         help="Directory where plot files will be written.",
-    )
-    parser.add_argument(
-        "--binary",
-        default="build/art_gallery",
-        help="Program to run relative to the repo root. Default: build/art_gallery",
-    )
-    parser.add_argument(
-        "--solver-output",
-        default="",
-        help="Optional path to a file containing precomputed solver output.",
     )
     parser.add_argument(
         "--format",
@@ -207,19 +220,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    repo_root = Path(__file__).resolve().parent
-    input_path = (repo_root / args.input).resolve() if not Path(args.input).is_absolute() else Path(args.input)
-    output_dir = (repo_root / args.output_dir).resolve() if not Path(args.output_dir).is_absolute() else Path(args.output_dir)
+    input_path = Path(args.input)
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     cases = parse_input_file(input_path)
-    program_output = load_program_output(repo_root, input_path, args.binary, args.solver_output)
-    triangles_per_case = parse_program_output(program_output, len(cases))
+    program_output = load_program_output(args.solver_output)
+    triangles_per_case, guards_per_case = parse_program_output(program_output, cases)
 
     stem = input_path.stem
-    for idx, ((outer, holes), triangles) in enumerate(zip(cases, triangles_per_case), start=1):
+    for idx, ((outer, holes), triangles, guards) in enumerate(
+        zip(cases, triangles_per_case, guards_per_case),
+        start=1,
+    ):
         output_path = output_dir / f"{stem}_case{idx}.{args.format}"
-        save_case_plot(output_path, idx, outer, holes, triangles)
+        save_case_plot(output_path, idx, outer, holes, triangles, guards)
         print(output_path)
 
 

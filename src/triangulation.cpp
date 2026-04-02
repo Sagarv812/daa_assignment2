@@ -4,9 +4,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <map>
-#include <ostream>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -568,11 +568,16 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
 
 }  // namespace
 
-std::vector<Triangle> triangulateGallery(Face* gallery) {
-    std::vector<Triangle> triangles;
+TriangulationResult triangulateGallery(Face* gallery) {
+    TriangulationResult result;
     std::vector<PolygonVertex> polygon = buildMergedPolygon(gallery);
     if (polygon.size() < 3) {
-        return triangles;
+        return result;
+    }
+
+    result.occurrenceVertices.reserve(polygon.size());
+    for (const PolygonVertex& occurrence : polygon) {
+        result.occurrenceVertices.push_back(occurrence.original);
     }
 
     std::vector<VertexCategory> categories(polygon.size());
@@ -601,20 +606,21 @@ std::vector<Triangle> triangulateGallery(Face* gallery) {
         }
 
         if (area > 0.0) {
-            triangles.push_back({polygon[face[0]].original, polygon[face[1]].original, polygon[face[2]].original});
+            result.triangles.push_back({polygon[face[0]].original, polygon[face[1]].original, polygon[face[2]].original});
+            result.triangleIndices.push_back({face[0], face[1], face[2]});
         } else {
-            triangles.push_back({polygon[face[0]].original, polygon[face[2]].original, polygon[face[1]].original});
+            result.triangles.push_back({polygon[face[0]].original, polygon[face[2]].original, polygon[face[1]].original});
+            result.triangleIndices.push_back({face[0], face[2], face[1]});
         }
     }
 
-    return triangles;
+    return result;
 }
 
-void printTriangles(const std::vector<Triangle>& triangles, std::ostream& out) {
-    out << triangles.size() << '\n';
+void printTriangles(const std::vector<Triangle>& triangles) {
     for (const Triangle& triangle : triangles) {
-        out << triangle[0]->x << ' ' << triangle[0]->y << ' '
-            << triangle[1]->x << ' ' << triangle[1]->y << ' '
-            << triangle[2]->x << ' ' << triangle[2]->y << '\n';
+        std::cout << triangle[0]->x << ' ' << triangle[0]->y << ' '
+                  << triangle[1]->x << ' ' << triangle[1]->y << ' '
+                  << triangle[2]->x << ' ' << triangle[2]->y << '\n';
     }
 }
