@@ -1,38 +1,93 @@
 #include "guards.hpp"
 
 #include <array>
-#include <cassert>
 #include <iostream>
 #include <queue>
 #include <set>
-#include <unordered_map>
-#include <utility>
+#include <unordered_set>
 #include <vector>
 
 namespace {
 
-using EdgeKey = std::array<int, 2>;
-
-struct EdgeKeyHash {
-    std::size_t operator()(const EdgeKey& edge) const {
-        return std::hash<int>{}(edge[0]) ^ (std::hash<int>{}(edge[1]) << 1U);
+std::vector<std::unordered_set<int>> buildAdjacency(const std::vector<TriangleIndices>& triangles,
+                                                    int vertexCount) {
+    std::vector<std::unordered_set<int>> adjacency(vertexCount);
+    for (const TriangleIndices& triangle : triangles) {
+        adjacency[triangle[0]].insert(triangle[1]);
+        adjacency[triangle[0]].insert(triangle[2]);
+        adjacency[triangle[1]].insert(triangle[0]);
+        adjacency[triangle[1]].insert(triangle[2]);
+        adjacency[triangle[2]].insert(triangle[0]);
+        adjacency[triangle[2]].insert(triangle[1]);
     }
-};
-
-EdgeKey makeEdgeKey(int a, int b) {
-    if (a < b) {
-        return {a, b};
-    }
-    return {b, a};
+    return adjacency;
 }
 
-int remainingColor(int first, int second) {
-    for (int color = 0; color < 3; ++color) {
-        if (color != first && color != second) {
-            return color;
+bool colorOuterplanarGraph(const std::vector<TriangleIndices>& triangles,
+                           int vertexCount,
+                           std::vector<int>& color) {
+    std::vector<std::unordered_set<int>> adjacency = buildAdjacency(triangles, vertexCount);
+    std::vector<int> degree(vertexCount, 0);
+    std::vector<bool> removed(vertexCount, false);
+    std::vector<int> removalOrder;
+    removalOrder.reserve(vertexCount);
+
+    std::queue<int> queue;
+    for (int vertex = 0; vertex < vertexCount; ++vertex) {
+        degree[vertex] = static_cast<int>(adjacency[vertex].size());
+        if (degree[vertex] <= 2) {
+            queue.push(vertex);
         }
     }
-    return 0;
+
+    while (!queue.empty()) {
+        const int vertex = queue.front();
+        queue.pop();
+        if (removed[vertex] || degree[vertex] > 2) {
+            continue;
+        }
+
+        removed[vertex] = true;
+        removalOrder.push_back(vertex);
+        for (int neighbor : adjacency[vertex]) {
+            if (removed[neighbor]) {
+                continue;
+            }
+            --degree[neighbor];
+            if (degree[neighbor] <= 2) {
+                queue.push(neighbor);
+            }
+        }
+    }
+
+    if (static_cast<int>(removalOrder.size()) != vertexCount) {
+        return false;
+    }
+
+    for (auto it = removalOrder.rbegin(); it != removalOrder.rend(); ++it) {
+        const int vertex = *it;
+        std::array<bool, 3> blocked = {false, false, false};
+        for (int neighbor : adjacency[vertex]) {
+            if (color[neighbor] != -1) {
+                blocked[color[neighbor]] = true;
+            }
+        }
+
+        int chosenColor = -1;
+        for (int candidate = 0; candidate < 3; ++candidate) {
+            if (!blocked[candidate]) {
+                chosenColor = candidate;
+                break;
+            }
+        }
+
+        if (chosenColor == -1) {
+            return false;
+        }
+        color[vertex] = chosenColor;
+    }
+
+    return true;
 }
 
 }  // namespace
@@ -46,98 +101,23 @@ GuardSolution computeGuards(const TriangulationResult& triangulation, int totalV
     }
 
     std::vector<int> color(triangulation.occurrenceVertices.size(), -1);
-    std::vector<std::vector<int>> triangleNeighbors(triangulation.triangleIndices.size());
-    std::unordered_map<EdgeKey, std::vector<int>, EdgeKeyHash> trianglesByEdge;
-
-    for (int i = 0; i < static_cast<int>(triangulation.triangleIndices.size()); ++i) {
-        const TriangleIndices& triangle = triangulation.triangleIndices[i];
-        trianglesByEdge[makeEdgeKey(triangle[0], triangle[1])].push_back(i);
-        trianglesByEdge[makeEdgeKey(triangle[1], triangle[2])].push_back(i);
-        trianglesByEdge[makeEdgeKey(triangle[2], triangle[0])].push_back(i);
-    }
-
-    for (const auto& edgeEntry : trianglesByEdge) {
-        const std::vector<int>& sharingTriangles = edgeEntry.second;
-        for (int i = 0; i < static_cast<int>(sharingTriangles.size()); ++i) {
-            for (int j = i + 1; j < static_cast<int>(sharingTriangles.size()); ++j) {
-                triangleNeighbors[sharingTriangles[i]].push_back(sharingTriangles[j]);
-                triangleNeighbors[sharingTriangles[j]].push_back(sharingTriangles[i]);
+    if (!colorOuterplanarGraph(triangulation.triangleIndices,
+                               static_cast<int>(triangulation.occurrenceVertices.size()),
+                               color)) {
+        std::set<Vertex*> fallbackVertices(triangulation.occurrenceVertices.begin(),
+                                           triangulation.occurrenceVertices.end());
+        for (Vertex* vertex : fallbackVertices) {
+            if (static_cast<int>(solution.guards.size()) == solution.theoreticalBound) {
+                break;
             }
+            solution.guards.push_back(vertex);
         }
-    }
-
-    std::vector<bool> triangleVisited(triangulation.triangleIndices.size(), false);
-    for (int startTriangle = 0; startTriangle < static_cast<int>(triangulation.triangleIndices.size()); ++startTriangle) {
-        if (triangleVisited[startTriangle]) {
-            continue;
-        }
-
-        const TriangleIndices& seed = triangulation.triangleIndices[startTriangle];
-        color[seed[0]] = 0;
-        color[seed[1]] = 1;
-        color[seed[2]] = 2;
-
-        std::queue<int> queue;
-        queue.push(startTriangle);
-        triangleVisited[startTriangle] = true;
-
-        while (!queue.empty()) {
-            int triangleIndex = queue.front();
-            queue.pop();
-
-            const TriangleIndices& triangle = triangulation.triangleIndices[triangleIndex];
-            for (int neighborIndex : triangleNeighbors[triangleIndex]) {
-                if (triangleVisited[neighborIndex]) {
-                    continue;
-                }
-
-                const TriangleIndices& neighbor = triangulation.triangleIndices[neighborIndex];
-                std::vector<int> sharedVertices;
-                int thirdVertex = -1;
-
-                for (int neighborVertex : neighbor) {
-                    bool found = false;
-                    for (int triangleVertex : triangle) {
-                        if (neighborVertex == triangleVertex) {
-                            found = true;
-                            sharedVertices.push_back(neighborVertex);
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        thirdVertex = neighborVertex;
-                    }
-                }
-
-                assert(sharedVertices.size() == 2);
-                assert(thirdVertex != -1);
-
-                int firstColor = color[sharedVertices[0]];
-                int secondColor = color[sharedVertices[1]];
-                assert(firstColor != -1 && secondColor != -1 && firstColor != secondColor);
-
-                int expectedColor = remainingColor(firstColor, secondColor);
-
-                if (color[thirdVertex] == -1) {
-                    color[thirdVertex] = expectedColor;
-                } else {
-                    assert(color[thirdVertex] == expectedColor);
-                }
-
-                triangleVisited[neighborIndex] = true;
-                queue.push(neighborIndex);
-            }
-        }
+        return solution;
     }
 
     std::array<std::set<Vertex*>, 3> colorClasses;
     for (int occurrence = 0; occurrence < static_cast<int>(triangulation.occurrenceVertices.size()); ++occurrence) {
-        int assignedColor = color[occurrence];
-        if (assignedColor == -1) {
-            assignedColor = 0;
-        }
-        colorClasses[assignedColor].insert(triangulation.occurrenceVertices[occurrence]);
+        colorClasses[color[occurrence]].insert(triangulation.occurrenceVertices[occurrence]);
     }
 
     int bestColor = 0;

@@ -49,20 +49,15 @@ def parse_input_file(path: Path) -> List[Case]:
     return cases
 
 
-def expected_triangle_count(case: Case) -> int:
-    outer, holes = case
-    total_vertices = len(outer) + sum(len(hole) for hole in holes)
-    return total_vertices + 2 * len(holes) - 2
-
-
 def parse_program_output(output: str, cases: Sequence[Case]) -> Tuple[List[List[Triangle]], List[GuardList]]:
     tokens = output.split()
     pos = 0
     all_triangles: List[List[Triangle]] = []
     all_guards: List[GuardList] = []
 
-    for case in cases:
-        triangle_count = expected_triangle_count(case)
+    for _case in cases:
+        triangle_count = int(tokens[pos])
+        pos += 1
         triangles: List[Triangle] = []
         for _ in range(triangle_count):
             triangle = (

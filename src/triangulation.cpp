@@ -206,6 +206,19 @@ void addDiagonal(int u,
     if (samePoint(polygon[u], polygon[v])) {
         return;
     }
+    
+    // REDUNDANCY PREVENTION: Reject diagonal if there is an existing polygon edge 
+    int u_prev = (u - 1 + n) % n;
+    int u_next = (u + 1) % n;
+    if (samePoint(polygon[u_prev], polygon[v]) || samePoint(polygon[u_next], polygon[v])) {
+        return;
+    }
+
+    int v_prev = (v - 1 + n) % n;
+    int v_next = (v + 1) % n;
+    if (samePoint(polygon[v_prev], polygon[u]) || samePoint(polygon[v_next], polygon[u])) {
+        return;
+    }
 
     const std::uint64_t key = encodeUndirectedEdge(u, v);
     if (seenDiagonals.insert(key).second) {
@@ -616,6 +629,8 @@ TriangulationResult triangulateGallery(Face* gallery) {
 }
 
 void printTriangles(const std::vector<Triangle>& triangles) {
+    if (triangles.empty()) return;
+    std::cout << triangles.size() << '\n';
     for (const Triangle& triangle : triangles) {
         std::cout << triangle[0]->x << ' ' << triangle[0]->y << ' '
                   << triangle[1]->x << ' ' << triangle[1]->y << ' '
