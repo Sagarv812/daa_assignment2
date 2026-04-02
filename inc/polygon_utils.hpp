@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "dcel.hpp"
+#include "graph.hpp"
 
 void addVertices(HalfEdge* startEdge, std::vector<Vertex*>& vertices);
 std::vector<Vertex*> getMergedPolygonVertices(Face* gallery);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dcel.hpp"
+#include "graph.hpp"
 
 void parsePolygonEdges(Face* gallery, bool isOuter);
 Face* parseSingleGallery();

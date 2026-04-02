@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "dcel.hpp"
+#include "graph.hpp"
 #include "triangulation.hpp"
 
 struct GuardSolution {

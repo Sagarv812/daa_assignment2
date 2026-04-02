@@ -3,7 +3,7 @@
 #include <array>
 #include <vector>
 
-#include "dcel.hpp"
+#include "graph.hpp"
 
 enum class VertexType {
     START,

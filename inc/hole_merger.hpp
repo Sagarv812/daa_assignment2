@@ -1,5 +1,5 @@
 #pragma once
 
-#include "dcel.hpp"
+#include "graph.hpp"
 
 void mergeHoles(Face* gallery);
