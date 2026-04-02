@@ -1,3 +1,7 @@
 .codex
 .vscode
 build/
+__pycache__
+.*/
+plots/
+*.txt
