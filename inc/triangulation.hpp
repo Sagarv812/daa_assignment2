@@ -5,7 +5,7 @@
 
 #include "dcel.hpp"
 
-enum class VertexCategory {
+enum class VertexType {
     START,
     END,
     SPLIT,

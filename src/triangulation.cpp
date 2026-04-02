@@ -5,9 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
-#include <limits>
 #include <map>
-#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -17,7 +15,7 @@
 
 namespace {
 
-constexpr double kEps = 1e-9;
+constexpr double eps = 1e-9;
 
 struct PolygonVertex {
     double x;
@@ -39,7 +37,7 @@ double ccw(const PolygonVertex& a, const PolygonVertex& b, const PolygonVertex& 
 }
 
 bool samePoint(const PolygonVertex& a, const PolygonVertex& b) {
-    return std::abs(a.x - b.x) <= kEps && std::abs(a.y - b.y) <= kEps;
+    return std::abs(a.x - b.x) <= eps && std::abs(a.y - b.y) <= eps;
 }
 
 double polygonArea(const std::vector<int>& indices, const std::vector<PolygonVertex>& polygon) {
@@ -65,11 +63,18 @@ double polygonArea(const std::vector<PolygonVertex>& polygon) {
 }
 
 bool isBelow(const PolygonVertex& other, const PolygonVertex& pivot) {
-    return (other.y < pivot.y) || (std::abs(other.y - pivot.y) <= kEps && other.x > pivot.x);
+    return (other.y < pivot.y) || (std::abs(other.y - pivot.y) <= eps && other.x > pivot.x);
 }
 
 bool isAbove(const PolygonVertex& other, const PolygonVertex& pivot) {
-    return (other.y > pivot.y) || (std::abs(other.y - pivot.y) <= kEps && other.x < pivot.x);
+    return (other.y > pivot.y) || (std::abs(other.y - pivot.y) <= eps && other.x < pivot.x);
+}
+
+bool comesEarlierInSweepOrder(const PolygonVertex& a, const PolygonVertex& b) {
+    if (std::abs(a.y - b.y) > eps) {
+        return a.y > b.y;
+    }
+    return a.x < b.x;
 }
 
 std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
@@ -95,7 +100,7 @@ std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
     return polygon;
 }
 
-VertexCategory classifyVertex(const std::vector<PolygonVertex>& polygon, int idx) {
+VertexType classifyVertex(const std::vector<PolygonVertex>& polygon, int idx) {
     const int n = static_cast<int>(polygon.size());
     const PolygonVertex& prev = polygon[(idx - 1 + n) % n];
     const PolygonVertex& curr = polygon[idx];
@@ -103,21 +108,21 @@ VertexCategory classifyVertex(const std::vector<PolygonVertex>& polygon, int idx
 
     const bool prevBelow = isBelow(prev, curr);
     const bool nextBelow = isBelow(next, curr);
-    const bool isConvex = ccw(prev, curr, next) > kEps;
+    const bool isConvex = ccw(prev, curr, next) > eps;
 
     if (prevBelow && nextBelow) {
-        return isConvex ? VertexCategory::START : VertexCategory::SPLIT;
+        return isConvex ? VertexType::START : VertexType::SPLIT;
     }
 
     if (!prevBelow && !nextBelow) {
-        return isConvex ? VertexCategory::END : VertexCategory::MERGE;
+        return isConvex ? VertexType::END : VertexType::MERGE;
     }
 
-    return isAbove(prev, curr) ? VertexCategory::REGULAR_LEFT : VertexCategory::REGULAR_RIGHT;
+    return isAbove(prev, curr) ? VertexType::REGULAR_LEFT : VertexType::REGULAR_RIGHT;
 }
 
 double xIntersectionAtY(const SweepEdge* edge, double y) {
-    if (std::abs(edge->y1 - edge->y2) <= kEps) {
+    if (std::abs(edge->y1 - edge->y2) <= eps) {
         return std::min(edge->x1, edge->x2);
     }
 
@@ -136,14 +141,14 @@ struct EdgeComparator {
         const double maxBY = std::max(b->y1, b->y2);
 
         double yRay = std::max(minAY, minBY);
-        if (std::abs(yRay - maxAY) <= kEps || std::abs(yRay - maxBY) <= kEps) {
+        if (std::abs(yRay - maxAY) <= eps || std::abs(yRay - maxBY) <= eps) {
             yRay = (std::min(maxAY, maxBY) + yRay) / 2.0;
         }
 
         const double xA = xIntersectionAtY(a, yRay);
         const double xB = xIntersectionAtY(b, yRay);
 
-        if (std::abs(xA - xB) > kEps) {
+        if (std::abs(xA - xB) > eps) {
             return xA < xB;
         }
 
@@ -209,7 +214,7 @@ void addDiagonal(int u,
 }
 
 std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& polygon,
-                                              const std::vector<VertexCategory>& categories) {
+                                              const std::vector<VertexType>& categories) {
     std::vector<std::pair<int, int>> diagonals;
     const int n = static_cast<int>(polygon.size());
 
@@ -219,10 +224,7 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
     }
 
     std::sort(order.begin(), order.end(), [&polygon](int a, int b) {
-        if (std::abs(polygon[a].y - polygon[b].y) > kEps) {
-            return polygon[a].y > polygon[b].y;
-        }
-        return polygon[a].x < polygon[b].x;
+        return comesEarlierInSweepOrder(polygon[a], polygon[b]);
     });
 
     std::vector<SweepEdge> edges(n);
@@ -247,21 +249,21 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
         const SweepEdge* outgoing = &edges[idx];
 
         switch (categories[idx]) {
-            case VertexCategory::START: {
+            case VertexType::START: {
                 activeEdges[outgoing] = idx;
                 break;
             }
-            case VertexCategory::END: {
+            case VertexType::END: {
                 auto inIt = activeEdges.find(incoming);
                 if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexCategory::MERGE) {
+                    if (categories[inIt->second] == VertexType::MERGE) {
                         addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
                     }
                     activeEdges.erase(inIt);
                 }
                 break;
             }
-            case VertexCategory::SPLIT: {
+            case VertexType::SPLIT: {
                 auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
                 if (leftIt != activeEdges.end()) {
                     addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
@@ -270,10 +272,10 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
                 activeEdges[outgoing] = idx;
                 break;
             }
-            case VertexCategory::MERGE: {
+            case VertexType::MERGE: {
                 auto inIt = activeEdges.find(incoming);
                 if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexCategory::MERGE) {
+                    if (categories[inIt->second] == VertexType::MERGE) {
                         addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
                     }
                     activeEdges.erase(inIt);
@@ -281,17 +283,17 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
 
                 auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
                 if (leftIt != activeEdges.end()) {
-                    if (categories[leftIt->second] == VertexCategory::MERGE) {
+                    if (categories[leftIt->second] == VertexType::MERGE) {
                         addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
                     }
                     leftIt->second = idx;
                 }
                 break;
             }
-            case VertexCategory::REGULAR_LEFT: {
+            case VertexType::REGULAR_LEFT: {
                 auto inIt = activeEdges.find(incoming);
                 if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexCategory::MERGE) {
+                    if (categories[inIt->second] == VertexType::MERGE) {
                         addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
                     }
                     activeEdges.erase(inIt);
@@ -299,10 +301,10 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
                 activeEdges[outgoing] = idx;
                 break;
             }
-            case VertexCategory::REGULAR_RIGHT: {
+            case VertexType::REGULAR_RIGHT: {
                 auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
                 if (leftIt != activeEdges.end()) {
-                    if (categories[leftIt->second] == VertexCategory::MERGE) {
+                    if (categories[leftIt->second] == VertexType::MERGE) {
                         addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
                     }
                     leftIt->second = idx;
@@ -361,7 +363,7 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
         std::sort(adjacency[u].begin(), adjacency[u].end(), [&polygon, u](int lhs, int rhs) {
             const double angleL = std::atan2(polygon[lhs].y - polygon[u].y, polygon[lhs].x - polygon[u].x);
             const double angleR = std::atan2(polygon[rhs].y - polygon[u].y, polygon[rhs].x - polygon[u].x);
-            if (std::abs(angleL - angleR) > kEps) {
+            if (std::abs(angleL - angleR) > eps) {
                 return angleL < angleR;
             }
 
@@ -420,7 +422,7 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
                 continue;
             }
 
-            if (polygonArea(face, polygon) > kEps) {
+            if (polygonArea(face, polygon) > eps) {
                 faces.push_back(face);
             }
         }
@@ -452,7 +454,7 @@ std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<Po
                 continue;
             }
 
-            if (std::abs(ccw(polygon[prev], polygon[curr], polygon[next])) <= kEps) {
+            if (std::abs(ccw(polygon[prev], polygon[curr], polygon[next])) <= eps) {
                 changed = true;
                 continue;
             }
@@ -482,12 +484,11 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
         const PolygonVertex& topVertex = polygon[face[top]];
         const PolygonVertex& bottomVertex = polygon[face[bottom]];
 
-        if (vertex.y > topVertex.y || (std::abs(vertex.y - topVertex.y) <= kEps && vertex.x < topVertex.x)) {
+        if (comesEarlierInSweepOrder(vertex, topVertex)) {
             top = i;
         }
 
-        if (vertex.y < bottomVertex.y ||
-            (std::abs(vertex.y - bottomVertex.y) <= kEps && vertex.x > bottomVertex.x)) {
+        if (comesEarlierInSweepOrder(bottomVertex, vertex)) {
             bottom = i;
         }
     }
@@ -502,10 +503,7 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
 
     std::vector<int> sorted = face;
     std::sort(sorted.begin(), sorted.end(), [&polygon](int lhs, int rhs) {
-        if (std::abs(polygon[lhs].y - polygon[rhs].y) > kEps) {
-            return polygon[lhs].y > polygon[rhs].y;
-        }
-        return polygon[lhs].x < polygon[rhs].x;
+        return comesEarlierInSweepOrder(polygon[lhs], polygon[rhs]);
     });
 
     std::vector<int> stack;
@@ -533,7 +531,7 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
             while (!stack.empty()) {
                 const int stackTop = stack.back();
                 const double turn = ccw(polygon[current], polygon[lastPopped], polygon[stackTop]);
-                const bool inside = isLeftChain[current] ? (turn < -kEps) : (turn > kEps);
+                const bool inside = isLeftChain[current] ? (turn < -eps) : (turn > eps);
                 if (!inside) {
                     break;
                 }
@@ -580,7 +578,7 @@ TriangulationResult triangulateGallery(Face* gallery) {
         result.occurrenceVertices.push_back(occurrence.original);
     }
 
-    std::vector<VertexCategory> categories(polygon.size());
+    std::vector<VertexType> categories(polygon.size());
     for (int i = 0; i < static_cast<int>(polygon.size()); ++i) {
         categories[i] = classifyVertex(polygon, i);
     }
@@ -601,7 +599,7 @@ TriangulationResult triangulateGallery(Face* gallery) {
         }
 
         const double area = ccw(polygon[face[0]], polygon[face[1]], polygon[face[2]]);
-        if (std::abs(area) <= kEps) {
+        if (std::abs(area) <= eps) {
             continue;
         }
 

@@ -15,6 +15,7 @@ int main() {
         int totalVertices = static_cast<int>(getTotalVertexCount(gallery));
         int holeCount = static_cast<int>(gallery->InnerComponents.size());
         mergeHoles(gallery);
+
         TriangulationResult triangulation = triangulateGallery(gallery);
         GuardSolution guards = computeGuards(triangulation, totalVertices, holeCount);
         printTriangles(triangulation.triangles);
