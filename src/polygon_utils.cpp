@@ -19,6 +19,18 @@ void addVertices(HalfEdge* startEdge, std::vector<Vertex*>& vertices){
         assert(currEdge != nullptr);
 }
 
+std::vector<Vertex*> getMergedPolygonVertices(Face* gallery){
+    std::vector<Vertex*> mergedPolygonVertices;
+    // Safety check to make sure gallery has edges
+    if(gallery->boundaryEdge != nullptr){
+        // Adding the final merged polygon vertices
+        HalfEdge* startEdge = gallery->boundaryEdge;
+        addVertices(startEdge, mergedPolygonVertices);
+    }
+
+    return mergedPolygonVertices;
+}
+
 std::vector<Vertex*> getTopmostVertices(Face* gallery){
     std::vector<Vertex*> topmostVertices;
     // Iterating through all the Holes

@@ -2,6 +2,7 @@
 
 #include "hole_merger.hpp"
 #include "parser.hpp"
+#include "polygon_utils.hpp"
 
 int main() {
     int T;
@@ -10,6 +11,9 @@ int main() {
     while(T--){
         Face* gallery = parseSingleGallery();
         mergeHoles(gallery);
+        std::vector<Vertex*> mergedPolygonVertices = getMergedPolygonVertices(gallery);
+
+        if(mergedPolygonVertices.size() == 0) continue;
         
         
     }

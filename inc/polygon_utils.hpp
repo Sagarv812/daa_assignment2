@@ -6,6 +6,7 @@
 #include "dcel.hpp"
 
 void addVertices(HalfEdge* startEdge, std::vector<Vertex*>& vertices);
+std::vector<Vertex*> getMergedPolygonVertices(Face* gallery);
 std::vector<Vertex*> getTopmostVertices(Face* gallery);
 
 template <typename CompareFunc>
