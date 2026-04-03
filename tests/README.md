@@ -7,4 +7,5 @@
 - `irregular_outer_irregular_hole.in`: irregular outer polygon with a pentagonal hole.
 - `concave_outer_triangle_hole.in`: concave outer polygon with a triangular hole.
 - `irregular_two_holes.in`: irregular outer polygon with two non-square holes.
-- `mixed_suite.in`: bundle of all seven cases above for one-shot testing.
+- `collinear_two_holes.in`: comb-shaped outer polygon with two octagonal holes and long collinear bridge opportunities, expected `42` triangles.
+- `mixed_suite.in`: bundle of the original regression cases for one-shot testing.

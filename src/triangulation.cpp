@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <unordered_map>
@@ -75,6 +76,52 @@ bool comesEarlierInSweepOrder(const PolygonVertex& a, const PolygonVertex& b) {
         return a.y > b.y;
     }
     return a.x < b.x;
+}
+
+bool triangulationDebugEnabled() {
+    return std::getenv("DEBUG_TRIANGULATION") != nullptr;
+}
+
+void dumpPolygon(const std::vector<PolygonVertex>& polygon) {
+    if (!triangulationDebugEnabled()) {
+        return;
+    }
+
+    std::cerr << "merged polygon size=" << polygon.size() << '\n';
+    for (int i = 0; i < static_cast<int>(polygon.size()); ++i) {
+        std::cerr << "  P" << i << "=(" << polygon[i].x << "," << polygon[i].y << ")\n";
+    }
+}
+
+void dumpDiagonals(const char* label,
+                   const std::vector<std::pair<int, int>>& diagonals,
+                   const std::vector<PolygonVertex>& polygon) {
+    if (!triangulationDebugEnabled()) {
+        return;
+    }
+
+    std::cerr << label << " count=" << diagonals.size() << '\n';
+    for (const auto& [u, v] : diagonals) {
+        std::cerr << "  (" << u << ":" << polygon[u].x << "," << polygon[u].y << ") -> "
+                  << "(" << v << ":" << polygon[v].x << "," << polygon[v].y << ")\n";
+    }
+}
+
+void dumpFaces(const char* label,
+               const std::vector<std::vector<int>>& faces,
+               const std::vector<PolygonVertex>& polygon) {
+    if (!triangulationDebugEnabled()) {
+        return;
+    }
+
+    std::cerr << label << " count=" << faces.size() << '\n';
+    for (const auto& face : faces) {
+        std::cerr << "  face size=" << face.size() << ':';
+        for (int idx : face) {
+            std::cerr << " (" << idx << ":" << polygon[idx].x << "," << polygon[idx].y << ")";
+        }
+        std::cerr << '\n';
+    }
 }
 
 std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
@@ -432,11 +479,21 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
 
             face = canonicalizeFace(face, polygon);
             if (face.size() < 3) {
+                if (triangulationDebugEnabled()) {
+                    std::cerr << "skipping face: canonicalized size < 3\n";
+                }
                 continue;
             }
 
-            if (polygonArea(face, polygon) > eps) {
+            const double area = polygonArea(face, polygon);
+            if (area > eps) {
                 faces.push_back(face);
+            } else if (triangulationDebugEnabled()) {
+                std::cerr << "skipping face: non-positive area=" << area << " size=" << face.size() << ':';
+                for (int idx : face) {
+                    std::cerr << " (" << idx << ":" << polygon[idx].x << "," << polygon[idx].y << ")";
+                }
+                std::cerr << '\n';
             }
         }
     }
@@ -467,11 +524,8 @@ std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<Po
                 continue;
             }
 
-            if (std::abs(ccw(polygon[prev], polygon[curr], polygon[next])) <= eps) {
-                changed = true;
-                continue;
-            }
-
+            // Preserve genuine collinear occurrences so bridge endpoints from different
+            // holes still have to appear as vertices in the final triangulation.
             reduced.push_back(curr);
         }
 
@@ -585,6 +639,7 @@ TriangulationResult triangulateGallery(Face* gallery) {
     if (polygon.size() < 3) {
         return result;
     }
+    dumpPolygon(polygon);
 
     result.occurrenceVertices.reserve(polygon.size());
     for (const PolygonVertex& occurrence : polygon) {
@@ -597,14 +652,22 @@ TriangulationResult triangulateGallery(Face* gallery) {
     }
 
     std::vector<std::pair<int, int>> diagonals = makeMonotone(polygon, categories);
+    dumpDiagonals("makeMonotone diagonals", diagonals, polygon);
     const std::vector<std::vector<int>> monotoneFaces = extractMonotoneFaces(polygon, diagonals);
+    dumpFaces("monotone faces", monotoneFaces, polygon);
 
     for (const std::vector<int>& face : monotoneFaces) {
         std::vector<std::pair<int, int>> faceDiagonals = triangulateMonotoneFace(face, polygon);
+        if (triangulationDebugEnabled()) {
+            std::cerr << "triangulating monotone face size=" << face.size()
+                      << " produced diagonals=" << faceDiagonals.size() << '\n';
+        }
+        dumpDiagonals("  face diagonals", faceDiagonals, polygon);
         diagonals.insert(diagonals.end(), faceDiagonals.begin(), faceDiagonals.end());
     }
 
     const std::vector<std::vector<int>> triangularFaces = extractMonotoneFaces(polygon, diagonals);
+    dumpFaces("triangular faces raw", triangularFaces, polygon);
     for (std::vector<int> face : triangularFaces) {
         face = simplifyFace(face, polygon);
         if (face.size() != 3) {

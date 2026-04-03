@@ -3,8 +3,25 @@
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <cstdlib>
 #include <cfloat>
 #include <cmath>
+#include <iostream>
+
+namespace {
+
+bool holeMergeDebugEnabled() {
+    return std::getenv("DEBUG_HOLE_MERGE") != nullptr;
+}
+
+void dumpVertex(const char* label, const Vertex* v) {
+    if (!holeMergeDebugEnabled() || !v) {
+        return;
+    }
+    std::cerr << label << "=(" << v->x << "," << v->y << ")\n";
+}
+
+}  // namespace
 
 double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
     Vertex* A = E->origin;
@@ -134,6 +151,12 @@ HalfEdge* findValidSplicePoint(Vertex* target, Vertex* v) {
 }
 
 void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
+    if (holeMergeDebugEnabled()) {
+        std::cerr << "buildBridge\n";
+        dumpVertex("  hole top", M);
+        dumpVertex("  target", Target);
+    }
+
     // Bridging outgoing and incoming edges of M
     HalfEdge* e_M_out = M->originatingEdge;
     HalfEdge* e_M_in = M->originatingEdge->prevEdge;
@@ -141,6 +164,10 @@ void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
     // Bridging outgoing and incoming edges of T
     HalfEdge* e_T_out = findValidSplicePoint(Target, M);
     if (!e_T_out) e_T_out = Target->originatingEdge;
+    if (holeMergeDebugEnabled()) {
+        dumpVertex("  splice out origin", e_T_out ? e_T_out->origin : nullptr);
+        dumpVertex("  splice out next", (e_T_out && e_T_out->nextEdge) ? e_T_out->nextEdge->origin : nullptr);
+    }
     HalfEdge* e_T_in = e_T_out->prevEdge;
 
     HalfEdge* bridge = new HalfEdge{M, gallery, nullptr, nullptr, nullptr};
@@ -166,6 +193,12 @@ void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
 void mergeHoles(Face* gallery){
     // Getting holes by storing the topMostVertices of those holes  
     std::vector<Vertex*> topmostVertices = getTopmostVertices(gallery);
+    if (holeMergeDebugEnabled()) {
+        std::cerr << "topmost holes:\n";
+        for (Vertex* v : topmostVertices) {
+            dumpVertex("  top", v);
+        }
+    }
     auto compY = [](Vertex* a, Vertex* b){
         if(a->y != b->y){
             return a->y > b->y;
@@ -183,13 +216,21 @@ void mergeHoles(Face* gallery){
 
     // Going through all the vertices one by one 
     for(Vertex* collidingVertex : sweepVertices){
+        if (holeMergeDebugEnabled()) {
+            dumpVertex("sweep", collidingVertex);
+        }
 
         if(nextHoleIdx < (int)topmostVertices.size() && collidingVertex == topmostVertices[nextHoleIdx]){
             auto leftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
 
             if(leftWall_it != activeEdges.end()){
                 Vertex* Target = leftWall_it->second;
+                if (holeMergeDebugEnabled()) {
+                    dumpVertex("  left wall target", Target);
+                }
                 buildBridge(collidingVertex, Target, gallery);
+            } else if (holeMergeDebugEnabled()) {
+                std::cerr << "  no left wall found\n";
             }
 
             nextHoleIdx++;
