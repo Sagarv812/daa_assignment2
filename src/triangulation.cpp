@@ -77,20 +77,124 @@ bool comesEarlierInSweepOrder(const PolygonVertex& a, const PolygonVertex& b) {
     return a.x < b.x;
 }
 
-std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
-    std::vector<Vertex*> vertices = getMergedPolygonVertices(gallery);
-    std::vector<PolygonVertex> polygon;
-    polygon.reserve(vertices.size());
+std::vector<const HalfEdge*> collectBoundaryEdges(HalfEdge* startEdge) {
+    std::vector<const HalfEdge*> edges;
+    if (startEdge == nullptr) {
+        return edges;
+    }
 
-    for (Vertex* vertex : vertices) {
-        PolygonVertex occurrence{vertex->x, vertex->y, vertex};
-        if (polygon.empty() || !samePoint(polygon.back(), occurrence)) {
-            polygon.push_back(occurrence);
+    const HalfEdge* currEdge = startEdge;
+    do {
+        edges.push_back(currEdge);
+        currEdge = currEdge->nextEdge;
+    } while (currEdge != startEdge && currEdge != nullptr);
+
+    assert(currEdge != nullptr);
+    return edges;
+}
+
+bool isBridgeEdge(const HalfEdge* edge) {
+    return edge != nullptr && edge->twin != nullptr;
+}
+
+std::pair<double, double> bridgeLeftNormal(const HalfEdge* edge) {
+    if (!isBridgeEdge(edge)) {
+        return {0.0, 0.0};
+    }
+
+    const double dx = edge->nextEdge->origin->x - edge->origin->x;
+    const double dy = edge->nextEdge->origin->y - edge->origin->y;
+    const double length = std::hypot(dx, dy);
+    if (length <= eps) {
+        return {0.0, 0.0};
+    }
+
+    return {-dy / length, dx / length};
+}
+
+double chooseSymbolicOffset(const std::vector<const HalfEdge*>& boundaryEdges) {
+    if (boundaryEdges.empty()) {
+        return 0.0;
+    }
+
+    double minX = boundaryEdges.front()->origin->x;
+    double maxX = minX;
+    double minY = boundaryEdges.front()->origin->y;
+    double maxY = minY;
+    double minPositiveEdgeLength = std::numeric_limits<double>::infinity();
+
+    for (const HalfEdge* edge : boundaryEdges) {
+        const double x1 = edge->origin->x;
+        const double y1 = edge->origin->y;
+        const double x2 = edge->nextEdge->origin->x;
+        const double y2 = edge->nextEdge->origin->y;
+
+        minX = std::min({minX, x1, x2});
+        maxX = std::max({maxX, x1, x2});
+        minY = std::min({minY, y1, y2});
+        maxY = std::max({maxY, y1, y2});
+
+        const double length = std::hypot(x2 - x1, y2 - y1);
+        if (length > eps) {
+            minPositiveEdgeLength = std::min(minPositiveEdgeLength, length);
         }
     }
 
-    if (polygon.size() > 1 && samePoint(polygon.front(), polygon.back())) {
-        polygon.pop_back();
+    const double bboxScale = std::max({maxX - minX, maxY - minY, 1.0});
+    double offset = bboxScale * 1e-7;
+    if (minPositiveEdgeLength < std::numeric_limits<double>::infinity()) {
+        offset = std::min(offset, minPositiveEdgeLength * 1e-4);
+    }
+
+    return std::max(offset, bboxScale * 32.0 * eps);
+}
+
+std::pair<double, double> occurrenceOffsetDirection(const HalfEdge* edge) {
+    double offsetX = 0.0;
+    double offsetY = 0.0;
+
+    if (isBridgeEdge(edge->prevEdge)) {
+        const auto [nx, ny] = bridgeLeftNormal(edge->prevEdge);
+        offsetX += nx;
+        offsetY += ny;
+    }
+
+    if (isBridgeEdge(edge)) {
+        const auto [nx, ny] = bridgeLeftNormal(edge);
+        offsetX += nx;
+        offsetY += ny;
+    }
+
+    const double length = std::hypot(offsetX, offsetY);
+    if (length > eps) {
+        return {offsetX / length, offsetY / length};
+    }
+
+    if (isBridgeEdge(edge)) {
+        return bridgeLeftNormal(edge);
+    }
+
+    if (isBridgeEdge(edge->prevEdge)) {
+        return bridgeLeftNormal(edge->prevEdge);
+    }
+
+    return {0.0, 0.0};
+}
+
+std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
+    std::vector<const HalfEdge*> boundaryEdges = collectBoundaryEdges(gallery->boundaryEdge);
+    std::vector<PolygonVertex> polygon;
+    polygon.reserve(boundaryEdges.size());
+
+    const double symbolicOffset = chooseSymbolicOffset(boundaryEdges);
+    for (int i = 0; i < static_cast<int>(boundaryEdges.size()); ++i) {
+        const HalfEdge* edge = boundaryEdges[i];
+        const auto [offsetDx, offsetDy] = occurrenceOffsetDirection(edge);
+        polygon.push_back(PolygonVertex{
+            edge->origin->x + symbolicOffset * offsetDx,
+            edge->origin->y + symbolicOffset * offsetDy,
+            edge->origin,
+        });
     }
 
     if (polygonArea(polygon) < 0.0) {
