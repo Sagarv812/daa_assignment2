@@ -41,10 +41,6 @@ bool samePoint(const PolygonVertex& a, const PolygonVertex& b) {
     return std::abs(a.x - b.x) <= eps && std::abs(a.y - b.y) <= eps;
 }
 
-bool sameOccurrence(int lhs, int rhs) {
-    return lhs == rhs;
-}
-
 double polygonArea(const std::vector<int>& indices, const std::vector<PolygonVertex>& polygon) {
     double area = 0.0;
     const int n = static_cast<int>(indices.size());
@@ -237,8 +233,8 @@ std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
     polygon.reserve(boundaryEdges.size());
 
     const double symbolicOffset = chooseSymbolicOffset(boundaryEdges);
-    for (int i = 0; i < static_cast<int>(boundaryEdges.size()); ++i) {
-        polygon.push_back(buildOffsetOccurrence(boundaryEdges[i], symbolicOffset));
+    for (const HalfEdge* edge : boundaryEdges) {
+        polygon.push_back(buildOffsetOccurrence(edge, symbolicOffset));
     }
 
     if (polygonArea(polygon) < 0.0) {
@@ -481,96 +477,20 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
     return diagonals;
 }
 
-[[maybe_unused]] std::vector<int> makeFaceFromRange(const std::vector<int>& face, int startPos, int endPos) {
-    std::vector<int> out;
-    const int m = static_cast<int>(face.size());
-    int pos = startPos;
-    while (true) {
-        out.push_back(face[pos]);
-        if (pos == endPos) {
-            break;
-        }
-        pos = (pos + 1) % m;
-    }
-    return out;
-}
-
-[[maybe_unused]] bool splitFaceByDiagonal(const std::vector<int>& face,
-                                          int u,
-                                          int v,
-                                          std::vector<int>& first,
-                                          std::vector<int>& second) {
-    if (face.size() < 3) {
-        return false;
-    }
-
-    int posU = -1;
-    int posV = -1;
-    for (int i = 0; i < static_cast<int>(face.size()); ++i) {
-        if (face[i] == u) {
-            posU = i;
-        }
-        if (face[i] == v) {
-            posV = i;
-        }
-    }
-
-    if (posU == -1 || posV == -1 || posU == posV) {
-        return false;
-    }
-
-    const int m = static_cast<int>(face.size());
-    if ((posU + 1) % m == posV || (posV + 1) % m == posU) {
-        return false;
-    }
-
-    first = makeFaceFromRange(face, posU, posV);
-    second = makeFaceFromRange(face, posV, posU);
-    return first.size() >= 3 && second.size() >= 3;
-}
-
-[[maybe_unused]] std::vector<std::vector<int>> splitFacesWithDiagonals(
-    int polygonSize,
-    const std::vector<std::pair<int, int>>& diagonals) {
-    std::vector<std::vector<int>> faces;
-    std::vector<int> initialFace;
-    initialFace.reserve(polygonSize);
-    for (int i = 0; i < polygonSize; ++i) {
-        initialFace.push_back(i);
-    }
-    faces.push_back(std::move(initialFace));
-
-    for (const auto& diagonal : diagonals) {
-        for (int faceIdx = 0; faceIdx < static_cast<int>(faces.size()); ++faceIdx) {
-            std::vector<int> first;
-            std::vector<int> second;
-            if (!splitFaceByDiagonal(faces[faceIdx], diagonal.first, diagonal.second, first, second)) {
-                continue;
-            }
-
-            faces[faceIdx] = std::move(first);
-            faces.push_back(std::move(second));
-            break;
-        }
-    }
-
-    return faces;
-}
-
-std::vector<int> canonicalizeFace(std::vector<int> face, const std::vector<PolygonVertex>&) {
-    while (!face.empty() && sameOccurrence(face.front(), face.back())) {
+std::vector<int> canonicalizeFace(std::vector<int> face) {
+    while (!face.empty() && face.front() == face.back()) {
         face.pop_back();
     }
 
     std::vector<int> filtered;
     filtered.reserve(face.size());
     for (int idx : face) {
-        if (filtered.empty() || !sameOccurrence(filtered.back(), idx)) {
+        if (filtered.empty() || filtered.back() != idx) {
             filtered.push_back(idx);
         }
     }
 
-    if (filtered.size() > 1 && sameOccurrence(filtered.front(), filtered.back())) {
+    if (filtered.size() > 1 && filtered.front() == filtered.back()) {
         filtered.pop_back();
     }
 
@@ -660,7 +580,7 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
                 }
             }
 
-            face = canonicalizeFace(face, polygon);
+            face = canonicalizeFace(std::move(face));
             if (face.size() < 3) {
                 continue;
             }
@@ -675,8 +595,8 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
     return faces;
 }
 
-std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<PolygonVertex>& polygon) {
-    std::vector<int> cleaned = canonicalizeFace(face, polygon);
+std::vector<int> simplifyFace(const std::vector<int>& face) {
+    std::vector<int> cleaned = canonicalizeFace(face);
     if (cleaned.size() < 3) {
         return cleaned;
     }
@@ -693,7 +613,7 @@ std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<Po
             const int curr = cleaned[i];
             const int next = cleaned[(i + 1) % m];
 
-            if (sameOccurrence(prev, curr) || sameOccurrence(curr, next)) {
+            if (prev == curr || curr == next) {
                 changed = true;
                 continue;
             }
@@ -712,7 +632,7 @@ std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<Po
 std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>& rawFace,
                                                          const std::vector<PolygonVertex>& polygon) {
     std::vector<std::pair<int, int>> diagonals;
-    std::vector<int> face = simplifyFace(rawFace, polygon);
+    std::vector<int> face = simplifyFace(rawFace);
     const int m = static_cast<int>(face.size());
     if (m < 3) {
         return diagonals;
@@ -808,7 +728,7 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
 void appendTriangleIfValid(const std::vector<int>& rawFace,
                            const std::vector<PolygonVertex>& polygon,
                            TriangulationResult& result) {
-    std::vector<int> face = simplifyFace(rawFace, polygon);
+    std::vector<int> face = simplifyFace(rawFace);
     if (face.size() != 3) {
         return;
     }
