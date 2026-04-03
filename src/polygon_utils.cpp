@@ -52,13 +52,11 @@ std::vector<Vertex*> getTopmostVertices(Face* gallery) {
     std::vector<Vertex*> topmostVertices;
 
     for (HalfEdge* startingEdge : gallery->InnerComponents) {
-        double maxY = startingEdge->origin->y;
         Vertex* topMost = startingEdge->origin;
 
         HalfEdge* curr = startingEdge->nextEdge;
         while (curr != startingEdge && curr != nullptr) {
-            if (curr->origin->y > maxY) {
-                maxY = curr->origin->y;
+            if (higherThenLeft(curr->origin, topMost)) {
                 topMost = curr->origin;
             }
             curr = curr->nextEdge;

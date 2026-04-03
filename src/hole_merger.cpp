@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdint>
+#include <limits>
+#include <unordered_map>
 
 double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
     Vertex* A = E->origin;
@@ -71,6 +74,7 @@ struct EdgeComparator {
         
     }
 };
+
 auto findClosestWallToLeft(Vertex* M, std::map<HalfEdge*,Vertex*, EdgeComparator>& activeEdges){
     
     // Making the dummyEdge for doing Binary Search
@@ -90,6 +94,82 @@ auto findClosestWallToLeft(Vertex* M, std::map<HalfEdge*,Vertex*, EdgeComparator
     // Could not find right wall :( 
     return activeEdges.end();
 }
+
+bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, double bY);
+
+namespace {
+
+constexpr double kTwoPi = 6.28318530717958647692;
+
+double getVectorAngle(double dx, double dy) {
+    double angle = std::atan2(dy, dx);
+    if (angle < 0.0) {
+        angle += kTwoPi;
+    }
+    return angle;
+}
+
+double getOutgoingAngle(const HalfEdge* edge) {
+    Vertex* origin = edge->origin;
+    Vertex* next = edge->nextEdge->origin;
+    return getVectorAngle(next->x - origin->x, next->y - origin->y);
+}
+
+double getBridgeAngle(const Vertex* from, const Vertex* to) {
+    return getVectorAngle(to->x - from->x, to->y - from->y);
+}
+
+struct OutgoingKey {
+    double angle;
+    std::uintptr_t edgeId;
+};
+
+struct OutgoingKeyComparator {
+    bool operator()(const OutgoingKey& lhs, const OutgoingKey& rhs) const {
+        if (lhs.angle != rhs.angle) {
+            return lhs.angle < rhs.angle;
+        }
+        return lhs.edgeId < rhs.edgeId;
+    }
+};
+
+using OutgoingAngleIndex = std::map<OutgoingKey, HalfEdge*, OutgoingKeyComparator>;
+using VertexOutgoingIndex = std::unordered_map<Vertex*, OutgoingAngleIndex>;
+
+OutgoingKey makeOutgoingKey(const HalfEdge* edge) {
+    return {getOutgoingAngle(edge), reinterpret_cast<std::uintptr_t>(edge)};
+}
+
+void addCycleToOutgoingIndex(HalfEdge* startEdge, VertexOutgoingIndex& outgoingIndex) {
+    if (startEdge == nullptr) {
+        return;
+    }
+
+    HalfEdge* currEdge = startEdge;
+    do {
+        outgoingIndex[currEdge->origin].emplace(makeOutgoingKey(currEdge), currEdge);
+        currEdge = currEdge->nextEdge;
+    } while (currEdge != startEdge && currEdge != nullptr);
+}
+
+void addOutgoingEdgeToIndex(HalfEdge* edge, VertexOutgoingIndex& outgoingIndex) {
+    outgoingIndex[edge->origin].emplace(makeOutgoingKey(edge), edge);
+}
+
+bool bridgeFitsSector(HalfEdge* e_out, Vertex* v) {
+    HalfEdge* e_in = e_out->prevEdge;
+
+    double bX = v->x - e_out->origin->x;
+    double bY = v->y - e_out->origin->y;
+    double inX = e_in->origin->x - e_out->origin->x;
+    double inY = e_in->origin->y - e_out->origin->y;
+    double outX = e_out->nextEdge->origin->x - e_out->origin->x;
+    double outY = e_out->nextEdge->origin->y - e_out->origin->y;
+
+    return isInsideSector(outX, outY, inX, inY, bX, bY);
+}
+}  // namespace
+
 bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, double bY) {
     double cross12 = v1X * v2Y - v1Y * v2X;
     double cross1B = v1X * bY - v1Y * bX;
@@ -102,44 +182,43 @@ bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, d
     }
 }
 
-HalfEdge* findValidSplicePoint(Vertex* target, Vertex* v) {
-    std::vector<HalfEdge*> candidates;
-    HalfEdge* startE = target->originatingEdge;
-    HalfEdge* currE = startE;
-    if(!currE) return nullptr;
-    do {
-        if (currE->origin == target) {
-            candidates.push_back(currE);
-        }
-        currE = currE->nextEdge;
-    } while (currE != startE && currE != nullptr);
-
-    if (candidates.size() == 1) return candidates[0];
-
-    double bX = v->x - target->x;
-    double bY = v->y - target->y;
-
-    for (HalfEdge* e_out : candidates) {
-        HalfEdge* e_in = e_out->prevEdge;
-        double inX = e_in->origin->x - target->x;
-        double inY = e_in->origin->y - target->y;
-        double outX = e_out->nextEdge->origin->x - target->x;
-        double outY = e_out->nextEdge->origin->y - target->y;
-
-        if (isInsideSector(outX, outY, inX, inY, bX, bY)) {
-            return e_out;
-        }
+HalfEdge* findValidSplicePoint(Vertex* target, Vertex* v, VertexOutgoingIndex& outgoingIndex) {
+    auto targetIt = outgoingIndex.find(target);
+    if (targetIt == outgoingIndex.end() || targetIt->second.empty()) {
+        return nullptr;
     }
-    return candidates[0];
+
+    OutgoingAngleIndex& candidates = targetIt->second;
+    if (candidates.size() == 1) {
+        return candidates.begin()->second;
+    }
+
+    OutgoingKey probe{getBridgeAngle(target, v), std::numeric_limits<std::uintptr_t>::max()};
+    auto upper = candidates.upper_bound(probe);
+    auto candidateIt = (upper == candidates.begin()) ? std::prev(candidates.end()) : std::prev(upper);
+
+    if (bridgeFitsSector(candidateIt->second, v)) {
+        return candidateIt->second;
+    }
+
+    if (upper != candidates.end() && bridgeFitsSector(upper->second, v)) {
+        return upper->second;
+    }
+
+    if (upper == candidates.end() && bridgeFitsSector(candidates.begin()->second, v)) {
+        return candidates.begin()->second;
+    }
+
+    return candidateIt->second;
 }
 
-void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
+void buildBridge(Vertex* M, Vertex* Target, Face* gallery, VertexOutgoingIndex& outgoingIndex){
     // Bridging outgoing and incoming edges of M
     HalfEdge* e_M_out = M->originatingEdge;
     HalfEdge* e_M_in = M->originatingEdge->prevEdge;
 
     // Bridging outgoing and incoming edges of T
-    HalfEdge* e_T_out = findValidSplicePoint(Target, M);
+    HalfEdge* e_T_out = findValidSplicePoint(Target, M, outgoingIndex);
     if (!e_T_out) e_T_out = Target->originatingEdge;
     HalfEdge* e_T_in = e_T_out->prevEdge;
 
@@ -162,6 +241,9 @@ void buildBridge(Vertex* M, Vertex* Target, Face* gallery){
 
     M->originatingEdge = bridge;
     Target->originatingEdge = bridgeTwin;
+
+    addOutgoingEdgeToIndex(bridge, outgoingIndex);
+    addOutgoingEdgeToIndex(bridgeTwin, outgoingIndex);
 }
 void mergeHoles(Face* gallery){
     // Getting holes by storing the topMostVertices of those holes  
@@ -175,6 +257,11 @@ void mergeHoles(Face* gallery){
     };
     // Vertices stored from top to bottom 
     std::vector<Vertex*> sweepVertices = getVerticesSorted(gallery, compY);
+    VertexOutgoingIndex outgoingIndex;
+    addCycleToOutgoingIndex(gallery->boundaryEdge, outgoingIndex);
+    for (HalfEdge* holeEdgeStart : gallery->InnerComponents) {
+        addCycleToOutgoingIndex(holeEdgeStart, outgoingIndex);
+    }
 
     // Making Active Edges
     std::map<HalfEdge*,Vertex* ,EdgeComparator> activeEdges;
@@ -188,7 +275,7 @@ void mergeHoles(Face* gallery){
 
             if(leftWall_it != activeEdges.end()){
                 Vertex* Target = leftWall_it->second;
-                buildBridge(collidingVertex, Target, gallery);
+                buildBridge(collidingVertex, Target, gallery, outgoingIndex);
             }
 
             nextHoleIdx++;
