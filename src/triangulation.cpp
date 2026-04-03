@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -97,11 +98,7 @@ bool isBridgeEdge(const HalfEdge* edge) {
     return edge != nullptr && edge->twin != nullptr;
 }
 
-std::pair<double, double> bridgeLeftNormal(const HalfEdge* edge) {
-    if (!isBridgeEdge(edge)) {
-        return {0.0, 0.0};
-    }
-
+std::pair<double, double> edgeDirection(const HalfEdge* edge) {
     const double dx = edge->nextEdge->origin->x - edge->origin->x;
     const double dy = edge->nextEdge->origin->y - edge->origin->y;
     const double length = std::hypot(dx, dy);
@@ -109,7 +106,12 @@ std::pair<double, double> bridgeLeftNormal(const HalfEdge* edge) {
         return {0.0, 0.0};
     }
 
-    return {-dy / length, dx / length};
+    return {dx / length, dy / length};
+}
+
+std::pair<double, double> leftNormal(const HalfEdge* edge) {
+    const auto [dx, dy] = edgeDirection(edge);
+    return {-dy, dx};
 }
 
 double chooseSymbolicOffset(const std::vector<const HalfEdge*>& boundaryEdges) {
@@ -149,36 +151,65 @@ double chooseSymbolicOffset(const std::vector<const HalfEdge*>& boundaryEdges) {
     return std::max(offset, bboxScale * 32.0 * eps);
 }
 
-std::pair<double, double> occurrenceOffsetDirection(const HalfEdge* edge) {
+PolygonVertex buildOffsetOccurrence(const HalfEdge* edge, double symbolicOffset) {
+    const HalfEdge* prev = edge->prevEdge;
+    const bool prevBridge = isBridgeEdge(prev);
+    const bool currBridge = isBridgeEdge(edge);
+
+    const double x = edge->origin->x;
+    const double y = edge->origin->y;
+    if (!prevBridge && !currBridge) {
+        return {x, y, edge->origin};
+    }
+
+    const auto [prevDx, prevDy] = edgeDirection(prev);
+    const auto [currDx, currDy] = edgeDirection(edge);
+    const auto [prevNx, prevNy] = leftNormal(prev);
+    const auto [currNx, currNy] = leftNormal(edge);
+
+    const double q1x = x + (prevBridge ? symbolicOffset * prevNx : 0.0);
+    const double q1y = y + (prevBridge ? symbolicOffset * prevNy : 0.0);
+    const double q2x = x + (currBridge ? symbolicOffset * currNx : 0.0);
+    const double q2y = y + (currBridge ? symbolicOffset * currNy : 0.0);
+
+    const double det = prevDx * currDy - prevDy * currDx;
+    if (std::abs(det) > eps) {
+        const double diffX = q2x - q1x;
+        const double diffY = q2y - q1y;
+        const double t = (diffX * currDy - diffY * currDx) / det;
+        return {q1x + t * prevDx, q1y + t * prevDy, edge->origin};
+    }
+
     double offsetX = 0.0;
     double offsetY = 0.0;
-
-    if (isBridgeEdge(edge->prevEdge)) {
-        const auto [nx, ny] = bridgeLeftNormal(edge->prevEdge);
-        offsetX += nx;
-        offsetY += ny;
+    if (prevBridge) {
+        offsetX += prevNx;
+        offsetY += prevNy;
+    }
+    if (currBridge) {
+        offsetX += currNx;
+        offsetY += currNy;
+    }
+    double length = std::hypot(offsetX, offsetY);
+    if (length <= eps && currBridge) {
+        offsetX = currNx;
+        offsetY = currNy;
+        length = std::hypot(offsetX, offsetY);
+    }
+    if (length <= eps && prevBridge) {
+        offsetX = prevNx;
+        offsetY = prevNy;
+        length = std::hypot(offsetX, offsetY);
+    }
+    if (length <= eps) {
+        return {x, y, edge->origin};
     }
 
-    if (isBridgeEdge(edge)) {
-        const auto [nx, ny] = bridgeLeftNormal(edge);
-        offsetX += nx;
-        offsetY += ny;
-    }
-
-    const double length = std::hypot(offsetX, offsetY);
-    if (length > eps) {
-        return {offsetX / length, offsetY / length};
-    }
-
-    if (isBridgeEdge(edge)) {
-        return bridgeLeftNormal(edge);
-    }
-
-    if (isBridgeEdge(edge->prevEdge)) {
-        return bridgeLeftNormal(edge->prevEdge);
-    }
-
-    return {0.0, 0.0};
+    return {
+        x + symbolicOffset * offsetX / length,
+        y + symbolicOffset * offsetY / length,
+        edge->origin,
+    };
 }
 
 std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
@@ -188,13 +219,7 @@ std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
 
     const double symbolicOffset = chooseSymbolicOffset(boundaryEdges);
     for (int i = 0; i < static_cast<int>(boundaryEdges.size()); ++i) {
-        const HalfEdge* edge = boundaryEdges[i];
-        const auto [offsetDx, offsetDy] = occurrenceOffsetDirection(edge);
-        polygon.push_back(PolygonVertex{
-            edge->origin->x + symbolicOffset * offsetDx,
-            edge->origin->y + symbolicOffset * offsetDy,
-            edge->origin,
-        });
+        polygon.push_back(buildOffsetOccurrence(boundaryEdges[i], symbolicOffset));
     }
 
     if (polygonArea(polygon) < 0.0) {
@@ -432,6 +457,82 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
     }
 
     return diagonals;
+}
+
+[[maybe_unused]] std::vector<int> makeFaceFromRange(const std::vector<int>& face, int startPos, int endPos) {
+    std::vector<int> out;
+    const int m = static_cast<int>(face.size());
+    int pos = startPos;
+    while (true) {
+        out.push_back(face[pos]);
+        if (pos == endPos) {
+            break;
+        }
+        pos = (pos + 1) % m;
+    }
+    return out;
+}
+
+[[maybe_unused]] bool splitFaceByDiagonal(const std::vector<int>& face,
+                                          int u,
+                                          int v,
+                                          std::vector<int>& first,
+                                          std::vector<int>& second) {
+    if (face.size() < 3) {
+        return false;
+    }
+
+    int posU = -1;
+    int posV = -1;
+    for (int i = 0; i < static_cast<int>(face.size()); ++i) {
+        if (face[i] == u) {
+            posU = i;
+        }
+        if (face[i] == v) {
+            posV = i;
+        }
+    }
+
+    if (posU == -1 || posV == -1 || posU == posV) {
+        return false;
+    }
+
+    const int m = static_cast<int>(face.size());
+    if ((posU + 1) % m == posV || (posV + 1) % m == posU) {
+        return false;
+    }
+
+    first = makeFaceFromRange(face, posU, posV);
+    second = makeFaceFromRange(face, posV, posU);
+    return first.size() >= 3 && second.size() >= 3;
+}
+
+[[maybe_unused]] std::vector<std::vector<int>> splitFacesWithDiagonals(
+    int polygonSize,
+    const std::vector<std::pair<int, int>>& diagonals) {
+    std::vector<std::vector<int>> faces;
+    std::vector<int> initialFace;
+    initialFace.reserve(polygonSize);
+    for (int i = 0; i < polygonSize; ++i) {
+        initialFace.push_back(i);
+    }
+    faces.push_back(std::move(initialFace));
+
+    for (const auto& diagonal : diagonals) {
+        for (int faceIdx = 0; faceIdx < static_cast<int>(faces.size()); ++faceIdx) {
+            std::vector<int> first;
+            std::vector<int> second;
+            if (!splitFaceByDiagonal(faces[faceIdx], diagonal.first, diagonal.second, first, second)) {
+                continue;
+            }
+
+            faces[faceIdx] = std::move(first);
+            faces.push_back(std::move(second));
+            break;
+        }
+    }
+
+    return faces;
 }
 
 std::vector<int> canonicalizeFace(std::vector<int> face, const std::vector<PolygonVertex>& polygon) {
@@ -679,6 +780,31 @@ std::vector<std::pair<int, int>> triangulateMonotoneFace(const std::vector<int>&
     return diagonals;
 }
 
+void appendTriangleIfValid(const std::vector<int>& rawFace,
+                           const std::vector<PolygonVertex>& polygon,
+                           TriangulationResult& result) {
+    std::vector<int> face = simplifyFace(rawFace, polygon);
+    if (face.size() != 3) {
+        return;
+    }
+
+    const double area = ccw(polygon[face[0]], polygon[face[1]], polygon[face[2]]);
+    if (std::abs(area) <= eps) {
+        return;
+    }
+
+    if (area > 0.0) {
+        result.triangles.push_back(
+            {polygon[face[0]].original, polygon[face[1]].original, polygon[face[2]].original});
+        result.triangleIndices.push_back({face[0], face[1], face[2]});
+        return;
+    }
+
+    result.triangles.push_back(
+        {polygon[face[0]].original, polygon[face[2]].original, polygon[face[1]].original});
+    result.triangleIndices.push_back({face[0], face[2], face[1]});
+}
+
 }  // namespace
 
 TriangulationResult triangulateGallery(Face* gallery) {
@@ -707,24 +833,8 @@ TriangulationResult triangulateGallery(Face* gallery) {
     }
 
     const std::vector<std::vector<int>> triangularFaces = extractMonotoneFaces(polygon, diagonals);
-    for (std::vector<int> face : triangularFaces) {
-        face = simplifyFace(face, polygon);
-        if (face.size() != 3) {
-            continue;
-        }
-
-        const double area = ccw(polygon[face[0]], polygon[face[1]], polygon[face[2]]);
-        if (std::abs(area) <= eps) {
-            continue;
-        }
-
-        if (area > 0.0) {
-            result.triangles.push_back({polygon[face[0]].original, polygon[face[1]].original, polygon[face[2]].original});
-            result.triangleIndices.push_back({face[0], face[1], face[2]});
-        } else {
-            result.triangles.push_back({polygon[face[0]].original, polygon[face[2]].original, polygon[face[1]].original});
-            result.triangleIndices.push_back({face[0], face[2], face[1]});
-        }
+    for (const std::vector<int>& face : triangularFaces) {
+        appendTriangleIfValid(face, polygon, result);
     }
 
     return result;

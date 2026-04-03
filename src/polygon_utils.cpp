@@ -70,7 +70,6 @@ std::vector<Vertex*> getTopmostVertices(Face* gallery) {
 
     return topmostVertices;
 }
-
 std::size_t getTotalVertexCount(Face* gallery) {
     std::size_t totalVertices = 0;
 
