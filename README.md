@@ -28,6 +28,18 @@ PYTHON=<path_to_env> ./test.sh tests/mixed_suite.in
 - saves the solver output in `solver_output.txt`
 - generates plot files in `plots/`
 
+Check triangle counts without plotting:
+
+```bash
+./check_triangle_counts.py tests/hard_suite.in
+```
+
+`check_triangle_counts.py`:
+- builds the solver by default
+- runs it on the given assignment-format input file(s)
+- compares each case against the theoretical count `n + 2h - 2`
+- exits with status `0` on full success and `1` if any case mismatches
+
 Generate plots:
 
 ```bash
