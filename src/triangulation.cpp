@@ -41,6 +41,10 @@ bool samePoint(const PolygonVertex& a, const PolygonVertex& b) {
     return std::abs(a.x - b.x) <= eps && std::abs(a.y - b.y) <= eps;
 }
 
+bool sameOccurrence(int lhs, int rhs) {
+    return lhs == rhs;
+}
+
 double polygonArea(const std::vector<int>& indices, const std::vector<PolygonVertex>& polygon) {
     double area = 0.0;
     const int n = static_cast<int>(indices.size());
@@ -61,6 +65,21 @@ double polygonArea(const std::vector<PolygonVertex>& polygon) {
         area += a.x * b.y - b.x * a.y;
     }
     return area / 2.0;
+}
+
+std::vector<PolygonVertex> buildOuterplanarEmbedding(int vertexCount) {
+    std::vector<PolygonVertex> embedding(vertexCount);
+    if (vertexCount == 0) {
+        return embedding;
+    }
+
+    const double angleStep = (2.0 * std::acos(-1.0)) / static_cast<double>(vertexCount);
+    for (int i = 0; i < vertexCount; ++i) {
+        const double angle = angleStep * static_cast<double>(i);
+        embedding[i] = {std::cos(angle), std::sin(angle), nullptr};
+    }
+
+    return embedding;
 }
 
 bool isBelow(const PolygonVertex& other, const PolygonVertex& pivot) {
@@ -281,7 +300,10 @@ struct EdgeComparator {
             return xA < xB;
         }
 
-        return a < b;
+        if (a->from != b->from) {
+            return a->from < b->from;
+        }
+        return a->to < b->to;
     }
 };
 
@@ -535,20 +557,20 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
     return faces;
 }
 
-std::vector<int> canonicalizeFace(std::vector<int> face, const std::vector<PolygonVertex>& polygon) {
-    while (!face.empty() && samePoint(polygon[face.front()], polygon[face.back()])) {
+std::vector<int> canonicalizeFace(std::vector<int> face, const std::vector<PolygonVertex>&) {
+    while (!face.empty() && sameOccurrence(face.front(), face.back())) {
         face.pop_back();
     }
 
     std::vector<int> filtered;
     filtered.reserve(face.size());
     for (int idx : face) {
-        if (filtered.empty() || !samePoint(polygon[filtered.back()], polygon[idx])) {
+        if (filtered.empty() || !sameOccurrence(filtered.back(), idx)) {
             filtered.push_back(idx);
         }
     }
 
-    if (filtered.size() > 1 && samePoint(polygon[filtered.front()], polygon[filtered.back()])) {
+    if (filtered.size() > 1 && sameOccurrence(filtered.front(), filtered.back())) {
         filtered.pop_back();
     }
 
@@ -558,6 +580,7 @@ std::vector<int> canonicalizeFace(std::vector<int> face, const std::vector<Polyg
 std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVertex>& polygon,
                                                    const std::vector<std::pair<int, int>>& diagonals) {
     const int n = static_cast<int>(polygon.size());
+    const std::vector<PolygonVertex> embedding = buildOuterplanarEmbedding(n);
     std::vector<std::vector<int>> adjacency(n);
     std::unordered_set<std::uint64_t> edgesSeen;
 
@@ -578,17 +601,19 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
     }
 
     for (int u = 0; u < n; ++u) {
-        std::sort(adjacency[u].begin(), adjacency[u].end(), [&polygon, u](int lhs, int rhs) {
-            const double angleL = std::atan2(polygon[lhs].y - polygon[u].y, polygon[lhs].x - polygon[u].x);
-            const double angleR = std::atan2(polygon[rhs].y - polygon[u].y, polygon[rhs].x - polygon[u].x);
+        std::sort(adjacency[u].begin(), adjacency[u].end(), [&embedding, u](int lhs, int rhs) {
+            const double angleL = std::atan2(embedding[lhs].y - embedding[u].y,
+                                             embedding[lhs].x - embedding[u].x);
+            const double angleR = std::atan2(embedding[rhs].y - embedding[u].y,
+                                             embedding[rhs].x - embedding[u].x);
             if (std::abs(angleL - angleR) > eps) {
                 return angleL < angleR;
             }
 
-            const double distL = (polygon[lhs].x - polygon[u].x) * (polygon[lhs].x - polygon[u].x) +
-                                 (polygon[lhs].y - polygon[u].y) * (polygon[lhs].y - polygon[u].y);
-            const double distR = (polygon[rhs].x - polygon[u].x) * (polygon[rhs].x - polygon[u].x) +
-                                 (polygon[rhs].y - polygon[u].y) * (polygon[rhs].y - polygon[u].y);
+            const double distL = (embedding[lhs].x - embedding[u].x) * (embedding[lhs].x - embedding[u].x) +
+                                 (embedding[lhs].y - embedding[u].y) * (embedding[lhs].y - embedding[u].y);
+            const double distR = (embedding[rhs].x - embedding[u].x) * (embedding[rhs].x - embedding[u].x) +
+                                 (embedding[rhs].y - embedding[u].y) * (embedding[rhs].y - embedding[u].y);
             return distL < distR;
         });
     }
@@ -640,7 +665,7 @@ std::vector<std::vector<int>> extractMonotoneFaces(const std::vector<PolygonVert
                 continue;
             }
 
-            const double area = polygonArea(face, polygon);
+            const double area = polygonArea(face, embedding);
             if (area > eps) {
                 faces.push_back(face);
             }
@@ -668,7 +693,7 @@ std::vector<int> simplifyFace(const std::vector<int>& face, const std::vector<Po
             const int curr = cleaned[i];
             const int next = cleaned[(i + 1) % m];
 
-            if (samePoint(polygon[prev], polygon[curr]) || samePoint(polygon[curr], polygon[next])) {
+            if (sameOccurrence(prev, curr) || sameOccurrence(curr, next)) {
                 changed = true;
                 continue;
             }

@@ -17,7 +17,7 @@ double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
     // even if ray coincides with with edge it 
     // will intersect with another edge so it works and we can safely return false 
     if(A->y == B->y){
-        return std::min(A->x, B->x);
+        return DBL_MAX;
     }
 
     double minY = std::min(A->y, B->y);
@@ -270,12 +270,13 @@ void mergeHoles(Face* gallery){
 
     // Going through all the vertices one by one 
     for(Vertex* collidingVertex : sweepVertices){
-        if(nextHoleIdx < (int)topmostVertices.size() && collidingVertex == topmostVertices[nextHoleIdx]){
-            auto leftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
+        auto preLeftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
+        HalfEdge* preLeftWall = (preLeftWall_it != activeEdges.end()) ? preLeftWall_it->first : nullptr;
 
-            if(leftWall_it != activeEdges.end()){
-                Vertex* Target = leftWall_it->second;
-                buildBridge(collidingVertex, Target, gallery, outgoingIndex);
+        if(nextHoleIdx < (int)topmostVertices.size() && collidingVertex == topmostVertices[nextHoleIdx]){
+            if(preLeftWall_it != activeEdges.end()){
+                Vertex* Target = preLeftWall_it->second;
+                 buildBridge(collidingVertex, Target, gallery, outgoingIndex);
             }
 
             nextHoleIdx++;
@@ -285,14 +286,21 @@ void mergeHoles(Face* gallery){
         HalfEdge* outgoingEdge = collidingVertex->originatingEdge;
 
         if(incomingEdge->origin->y > collidingVertex->y) activeEdges.erase(incomingEdge);
-        else activeEdges[incomingEdge] = collidingVertex;
+        else if(incomingEdge->origin->y < collidingVertex->y) activeEdges[incomingEdge] = collidingVertex;
 
         if(outgoingEdge->nextEdge->origin->y > collidingVertex->y) activeEdges.erase(outgoingEdge);
-        else activeEdges[outgoingEdge] = collidingVertex;
+        else if(outgoingEdge->nextEdge->origin->y < collidingVertex->y) activeEdges[outgoingEdge] = collidingVertex;
 
         auto leftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
         if(leftWall_it != activeEdges.end()){
             leftWall_it->second = collidingVertex;
+        }
+
+        if(preLeftWall != nullptr){
+            auto preservedLeftWall_it = activeEdges.find(preLeftWall);
+            if(preservedLeftWall_it != activeEdges.end()){
+                preservedLeftWall_it->second = collidingVertex;
+            }
         }
         
     }

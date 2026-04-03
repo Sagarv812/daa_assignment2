@@ -1,0 +1,3 @@
+# Keep LaTeX-generated files out of the source directory.
+$out_dir = 'latex_build';
+$aux_dir = 'latex_build';
