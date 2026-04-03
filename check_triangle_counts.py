@@ -69,34 +69,55 @@ def parse_input_file(path: Path) -> InputSummary:
     )
 
 
-def parse_solver_output(output: str, case_count: int) -> OutputSummary:
-    tokens = output.split()
-    idx = 0
+def is_integer_token(token: str) -> bool:
+    if not token:
+        return False
+    if token[0] in "+-":
+        return token[1:].isdigit()
+    return token.isdigit()
 
-    def next_token() -> str:
-        nonlocal idx
-        if idx >= len(tokens):
-            raise ValueError("unexpected end of solver output")
-        token = tokens[idx]
-        idx += 1
-        return token
+
+def parse_float_list(line: str, expected_count: int, what: str) -> list[float]:
+    parts = line.split()
+    if len(parts) != expected_count:
+        raise ValueError(f"expected {expected_count} values for {what}, got {len(parts)}")
+    return [float(part) for part in parts]
+
+
+def parse_solver_output(output: str, expected_triangles: list[int]) -> OutputSummary:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    idx = 0
 
     actual_triangles: list[int] = []
 
-    for _ in range(case_count):
-        triangle_count = int(next_token())
+    for case_idx, expected_triangle_count in enumerate(expected_triangles, start=1):
+        if idx >= len(lines):
+            raise ValueError("unexpected end of solver output")
+
+        if is_integer_token(lines[idx]) and int(lines[idx]) == expected_triangle_count:
+            idx += 1
+
+        triangle_count = 0
+        while idx < len(lines) and not is_integer_token(lines[idx]):
+            parse_float_list(lines[idx], 6, f"triangle in case {case_idx}")
+            triangle_count += 1
+            idx += 1
         actual_triangles.append(triangle_count)
 
-        for _ in range(triangle_count * 6):
-            next_token()
+        if idx >= len(lines) or not is_integer_token(lines[idx]):
+            raise ValueError("unexpected end of solver output")
 
-        guard_count = int(next_token())
-        for _ in range(guard_count * 2):
-            next_token()
+        guard_count = int(lines[idx])
+        idx += 1
+        for _ in range(guard_count):
+            if idx >= len(lines):
+                raise ValueError("unexpected end of solver output")
+            parse_float_list(lines[idx], 2, f"guard in case {case_idx}")
+            idx += 1
 
     return OutputSummary(
         actual_triangles=actual_triangles,
-        trailing_tokens=len(tokens) - idx,
+        trailing_tokens=len(lines) - idx,
     )
 
 
@@ -122,7 +143,7 @@ def run_solver(input_path: Path) -> str:
 
 def check_file(path: Path) -> bool:
     summary = parse_input_file(path)
-    output = parse_solver_output(run_solver(path), summary.case_count)
+    output = parse_solver_output(run_solver(path), summary.expected_triangles)
 
     print(path)
     passed = True

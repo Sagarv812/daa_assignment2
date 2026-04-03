@@ -15,6 +15,7 @@ Triangle = Tuple[Point, Point, Point]
 Polygon = List[Point]
 Case = Tuple[Polygon, List[Polygon]]
 GuardList = List[Point]
+Bounds = Tuple[float, float, float, float]
 
 
 def parse_input_file(path: Path) -> List[Case]:
@@ -161,12 +162,10 @@ def add_guards(ax, guards: GuardList) -> None:
     ax.scatter(xs, ys, c="#c62828", s=130, marker="*", edgecolors="#5d0f0f", linewidths=0.8, zorder=6)
 
 
-def configure_axes(ax,
-                   outer: Polygon,
+def compute_bounds(outer: Polygon,
                    holes: Sequence[Polygon],
                    triangles: Sequence[Triangle],
-                   guards: GuardList,
-                   title: str) -> None:
+                   guards: GuardList) -> Bounds:
     xs = [x for x, _ in outer]
     ys = [y for _, y in outer]
 
@@ -191,11 +190,47 @@ def configure_axes(ax,
     span = max(max_x - min_x, max_y - min_y, 1.0)
     margin = 0.08 * span
 
-    ax.set_xlim(min_x - margin, max_x + margin)
-    ax.set_ylim(min_y - margin, max_y + margin)
+    return (min_x - margin, max_x + margin, min_y - margin, max_y + margin)
+
+
+def configure_axes(ax,
+                   bounds: Bounds,
+                   title: str) -> None:
+    min_x, max_x, min_y, max_y = bounds
+
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
     ax.set_aspect("equal", adjustable="box")
     ax.set_title(title)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.35)
+
+
+def draw_case_panel(ax,
+                    outer: Polygon,
+                    holes: Sequence[Polygon],
+                    triangles: Sequence[Triangle],
+                    guards: GuardList,
+                    bounds: Bounds,
+                    title: str,
+                    show_triangulation: bool,
+                    show_guards: bool) -> None:
+    ax.set_facecolor("#fcfaf5")
+
+    add_polygon_outline(ax, outer, facecolor="#dfe8d5", edgecolor="#1f1f1f", linewidth=2.5)
+
+    if show_triangulation:
+        add_triangle_overlays(ax, triangles)
+
+    for hole in holes:
+        add_polygon_outline(ax, hole, facecolor="#ffffff", edgecolor="#1f1f1f", linewidth=2.0)
+
+    add_polygon_outline(ax, outer, facecolor="none", edgecolor="#1f1f1f", linewidth=2.5)
+    add_vertices(ax, [outer, *holes])
+
+    if show_guards:
+        add_guards(ax, guards)
+
+    configure_axes(ax, bounds, title)
 
 
 def save_case_plot(output_path: Path,
@@ -204,27 +239,39 @@ def save_case_plot(output_path: Path,
                    holes: Sequence[Polygon],
                    triangles: Sequence[Triangle],
                    guards: GuardList) -> None:
-    fig, ax = plt.subplots(figsize=(8, 8))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6.5))
     fig.patch.set_facecolor("#f8f5ef")
-    ax.set_facecolor("#fcfaf5")
-
-    add_polygon_outline(ax, outer, facecolor="#dfe8d5", edgecolor="#1f1f1f", linewidth=2.5)
-    add_triangle_overlays(ax, triangles)
-
-    for hole in holes:
-        add_polygon_outline(ax, hole, facecolor="#ffffff", edgecolor="#1f1f1f", linewidth=2.0)
-
-    add_polygon_outline(ax, outer, facecolor="none", edgecolor="#1f1f1f", linewidth=2.5)
-    add_vertices(ax, [outer, *holes])
-    add_guards(ax, guards)
-    configure_axes(
-        ax,
+    bounds = compute_bounds(
         outer,
         holes,
         triangles,
         guards,
-        f"Case {case_index}: triangles={len(triangles)}, guards={len(guards)}",
     )
+
+    draw_case_panel(
+        axes[0],
+        outer,
+        holes,
+        triangles,
+        guards,
+        bounds,
+        f"Case {case_index}: input polygon",
+        show_triangulation=False,
+        show_guards=False,
+    )
+    draw_case_panel(
+        axes[1],
+        outer,
+        holes,
+        triangles,
+        guards,
+        bounds,
+        f"Case {case_index}: triangulation and guards",
+        show_triangulation=True,
+        show_guards=True,
+    )
+
+    fig.suptitle(f"Case {case_index}: triangles={len(triangles)}, guards={len(guards)}")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")

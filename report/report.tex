@@ -77,6 +77,8 @@ The implementation is organized around two formulas:
 
 The first formula is a correctness target for triangulation. The second formula gives the theoretical upper bound used by the guard stage.
 
+The program prints one triangle per line, and then prints the guard count followed by one guard coordinate per line per testcase.
+
 \section{Modular Components}
 
 Here is a list of all the files submitted and their function:
@@ -89,24 +91,31 @@ Here is a list of all the files submitted and their function:
 Component & Responsibility \\
 \midrule
 \code{inc/graph.hpp} & Defines the half-edge data model: \code{Vertex}, \code{HalfEdge}, and \code{Face}. \\
-\code{inc/parser.hpp} and \code{src/parser.cpp} & Read the assignment input, normalize orientation, and build circular half-edge cycles. \\
+\code{inc/parser.hpp} and \code{src/parser.cpp} & Read and validate the assignment input, normalize orientation, and build circular half-edge cycles. \\
 \code{inc/polygon_utils.hpp} and \code{src/polygon_utils.cpp} & Provide cycle traversal, total-vertex counting, and topmost-hole extraction. \\
 \code{inc/hole_merger.hpp} and \code{src/hole_merger.cpp} & Merge holes into the outer boundary by a sweep-line bridge insertion strategy. \\
 \code{inc/triangulation.hpp} and \code{src/triangulation.cpp} & Build the merged polygon walk, classify vertices, add diagonals, extract faces, and output triangles. \\
 \code{inc/guards.hpp} and \code{src/guards.cpp} & Build the triangulation graph, 3-color it, and choose a guard set. \\
 \code{src/main.cpp} & Orchestrates the full pipeline for every test case. \\
-\code{visualize.py} & Converts the text output into a triangulated graph along with the guards. \\
+\code{visualize.py} & Converts the text output into side-by-side matplotlib plots showing the input gallery and the resulting triangulation with guards. \\
 \code{Makefile} & Builds the executable \code{build/art_gallery} with C++17. \\
-\code{test.sh} & Submission script that builds and runs the solver on a given input file. \\
+\code{test.sh} & Bash helper that builds the solver, writes raw solver output to \code{solver_output.txt}, and then runs the visualizer on a given input file. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-To run the program with a custom input just run:
+To run the program with a custom input from a Bash-compatible shell, run:
 
 \begin{Verbatim}[fontsize=\small]
 ./test.sh <input_file>
 \end{Verbatim}
+
+Note that you need the \code{matplotlib} library in the Python environment used by the visualizer. The script defaults to \code{python3}, but \code{test.sh} actually reads the interpreter from the environment variable \code{PYTHON}. If your preferred interpreter is not the default one on \code{PATH}, set \code{PYTHON} to the full executable path recognized by your shell before running the script. In Bash, that looks like:
+\begin{Verbatim}[fontsize=\small]
+PYTHON=/absolute/path/to/python ./test.sh <input_file>
+\end{Verbatim}
+
+On Linux and macOS this will usually be a normal POSIX path. On Windows, the same \code{test.sh} workflow is intended for Git Bash or WSL, so the path format must match the shell being used there.
 
 \section{End-to-End Pipeline}
 
@@ -189,6 +198,8 @@ For each cycle, \code{src/parser.cpp} does the following:
 \item allocate one \code{Vertex} and one \code{HalfEdge} per coordinate,
 \item connect the half-edges into a circular doubly linked list.
 \end{enumerate}
+
+Before the half-edge cycle is allocated, the parser also performs some lightweight validation. It rejects malformed cases such as negative counts, missing coordinates, polygons with fewer than three vertices, duplicate consecutive vertices, and zero-area cycles. This keeps invalid inputs from reaching the geometry and sweep-line stages.
 
 After parsing is complete, \code{src/polygon_utils.cpp} supplies the shared traversal helpers used later by hole merging and guard computation:
 
@@ -415,7 +426,7 @@ In exact code terms, the six outcomes are:
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\textwidth]{vertex_types_clean}
+\includegraphics[width=0.8\textwidth]{vertex_types_clean}
 \caption{Representative local configurations for the exact predicates used by \code{classifyVertex}. The panels follow the counter-clockwise walk \code{prev -> curr -> next}, and the meaning of above/below matches the same sweep-order tie-breaks used in the code.}
 \label{fig:vertex-types}
 \end{figure}
@@ -460,13 +471,6 @@ Two details matter for correctness here:
 \item the embedding is the same one built by the code, namely occurrence $i$ placed at angle $2\pi i / m$,
 \item the diagonals must stay noncrossing when drawn on the circular placement, so the resulting graph can be traced face by face.
 \end{itemize}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.60\textwidth]{outerplanar_embedding}
-\caption{Circular embedding used in \code{extractMonotoneFaces}. The occurrence indices are placed on the same counter-clockwise circle used by the code, the diagonals remain noncrossing, and the highlighted local step shows the actual traversal rule: arriving along \code{0 -> 4} makes the walk continue along \code{4 -> 5} because 5 is the previous angular neighbor of 0 in the sorted rotation order around 4.}
-\label{fig:outerplanar}
-\end{figure}
 
 This avoids introducing another heavy topology structure while still recovering faces reliably from the diagonal graph.
 
@@ -543,273 +547,53 @@ If the coloring step somehow fails, the code falls back to the first distinct or
 
 \subsection{Notation Used for the Analysis}
 
-Let:
-
-\begin{itemize}
-\item $n$ be the total number of original input vertices,
-\item $h$ be the number of holes,
-\item $m$ be the number of vertex \emph{occurrences} on the merged walk after hole bridging.
-\end{itemize}
-
-In this implementation, each hole bridge causes two bridge endpoints to reappear in the merged boundary traversal, so:
-
+Let $n$ be the total number of original input vertices, $h$ the number of holes, and $m$ the number of vertex occurrences on the merged walk after bridging. Since each bridge makes two endpoints reappear in the boundary walk,
 \[
 m = n + 2h
 \]
+and the triangulated simple polygon obtained after bridging has $m-2 = n+2h-2$ triangles.
 
-This is consistent with the triangle formula for a simple polygon obtained after bridging:
+\subsection{Stage-Wise Summary}
 
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.24\textwidth}X>{\raggedleft\arraybackslash}p{0.17\textwidth}>{\raggedleft\arraybackslash}p{0.14\textwidth}@{}}
+\toprule
+Stage & Dominant reason & Time & Space \\
+\midrule
+Parsing and validation & Read all coordinates, normalize orientation, allocate one \code{Vertex} and one \code{HalfEdge} per input vertex. & $\bigO{n}$ & $\bigO{n}$ \\
+Hole merging & Sort sweep events, maintain the active-edge map, query the outgoing-angle index, and splice one bridge per hole. & $\bigO{n \log n}$ & $\bigO{n+h}$ \\
+Triangulation & Build the merged occurrence polygon, run monotone decomposition, extract faces twice, and triangulate all monotone faces. & $\bigO{m \log m}$ & $\bigO{m}$ \\
+Guard computation & Build the triangle adjacency graph, 3-color it, then deduplicate original \code{Vertex*} pointers with ordered sets. & $\bigO{m \log m}$ & $\bigO{m}$ \\
+Printing & Output all triangles and selected guards. & $\bigO{m}$ & $\bigO{1}$ extra \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Why These Bounds Hold}
+
+The parser is linear because every coordinate is read, validated, and copied into one \code{Vertex}/\code{HalfEdge} pair exactly once.
+
+The hole-merging stage avoids any full boundary scan inside the sweep. The only global sort is the initial ordering of sweep events. After that, each event in \code{mergeHoles} performs only a constant number of balanced-map operations on the active-wall structure, a constant amount of helper-state bookkeeping, and at most one logarithmic search in the per-vertex outgoing-angle index. The actual splice in \code{buildBridge} rewires only a constant-size neighborhood of half-edges, so the merge stage stays at $\bigO{n \log n}$ rather than drifting into quadratic behavior.
+
+The triangulation stage has two notable parts for time complexity analysis. First, \code{makeMonotone} performs one sweep over the merged walk, with the logarithmic factor coming only from the active-edge map. Second, \code{extractMonotoneFaces} sorts each local adjacency list, but the boundary-plus-diagonal graph remains planar and has only linear-size edge sets, so the total sorting work is bounded by $\sum_v \deg(v)\log \deg(v) = \bigO{m \log m}$. Likewise, \code{triangulateMonotoneFace} sorts the vertices of each monotone face separately, but the total boundary size of all extracted faces is still linear in the subdivision, so the aggregate cost remains $\bigO{m \log m}$ rather than becoming quadratic.
+
+The guard stage is almost linear: building triangle adjacency and the reverse-degeneracy coloring both take $\bigO{m}$. The extra logarithmic factor comes only from deduplicating original \code{Vertex*} pointers with ordered \code{std::set} containers when the three color classes are compared.
+
+\subsection{Overall Complexity}
+
+Combining the stages gives:
 \[
-m - 2 = n + 2h - 2
-\]
-
-So the later triangulation and guard stages are analyzed in terms of $m$, and then converted back to $(n,h)$ at the end.
-
-\subsection{Parsing and Utility Routines}
-
-\textbf{Parsing one test case.}
-\begin{itemize}
-\item Reading all coordinates takes $\bigO{n}$ time.
-\item Computing signed area for each cycle is linear in that cycle size, so the total is still $\bigO{n}$.
-\item Allocating one \code{Vertex} and one \code{HalfEdge} per input vertex is $\bigO{n}$.
-\item Linking each cycle into a circular doubly linked list is $\bigO{n}$.
-\end{itemize}
-
-So the full parsing stage costs $\bigO{n}$ time and $\bigO{n}$ space.
-
-\textbf{Utility routines in \code{src/polygon_utils.cpp}.}
-\begin{itemize}
-\item \code{addVertices}: $\bigO{k}$ for a cycle of length $k$.
-\item \code{getMergedPolygonVertices}: $\bigO{m}$ after hole merging.
-\item \code{getTopmostVertices}: scans every hole cycle once, so $\bigO{n}$ total before merging.
-\item \code{getTotalVertexCount}: scans every cycle once, so $\bigO{n}$.
-\item \code{getVerticesSorted}: collect all vertices in $\bigO{n}$ and sort them in $\bigO{n \log n}$, giving $\bigO{n \log n}$ overall.
-\end{itemize}
-
-\subsection{Hole Merging Complexity}
-
-The updated hole-merging phase has five distinct costs.
-
-\textbf{1. Topmost-hole extraction.}
-
-\code{getTopmostVertices} scans all hole cycles once, so this part is $\bigO{n}$.
-
-\textbf{2. Sweep-order preparation.}
-
-All original vertices are collected and sorted by sweep priority, costing $\bigO{n \log n}$.
-
-\textbf{3. Index initialization before the sweep.}
-
-Two auxiliary structures are prepared before the first sweep event:
-
-\begin{itemize}
-\item the outgoing-angle index inserts one initial outgoing edge per original vertex, costing $\bigO{n}$ total,
-\item \code{addCycleVerticesToComponentMap} records one component id per original vertex, also costing $\bigO{n}$ total.
-\end{itemize}
-
-\textbf{4. Main sweep over vertices.}
-
-The sweep visits every original vertex once. For each event it performs only a constant number of:
-
-\begin{itemize}
-\item active-edge map lookups,
-\item active-edge insertions and deletions,
-\item \code{upper_bound} queries,
-\item helper-state updates.
-\end{itemize}
-
-The helper-state routines such as \code{setHoleTopHelper}, \code{canOverwriteWithOrdinary}, and \code{applyOrdinaryHelperUpdate} are constant-time because they only read or write a few fields, including the tracked minimum and maximum same-level helpers. The active-edge map is still a balanced \code{std::map}, so the dominant per-event cost is $\bigO{\log n}$. Therefore the full sweep contributes $\bigO{n \log n}$.
-
-\textbf{5. Hole-top bridge events.}
-
-When a hole topmost vertex is encountered, the extra work is:
-
-\begin{itemize}
-\item one active-edge lookup for the pre-bridge left wall,
-\item one constant-time \code{getBridgeTarget} decision from the stored helper extrema,
-\item one search in the outgoing-angle index, costing $\bigO{\log d(v)}$ where $d(v)$ is the number of outgoing edges currently stored for the chosen target vertex,
-\item constant-time pointer rewiring in \code{buildBridge},
-\item two outgoing-edge insertions,
-\item one extra active-edge lookup to preserve the pre-bridge wall lock if that wall remains active.
-\end{itemize}
-
-Across all holes this remains within $\bigO{h \log n}$ worst-case time, which is still dominated by the global sort and the sweep itself.
-
-\textbf{Hole-merging total.}
-
-\[
-\text{Time} = \bigO{n \log n}, \qquad \text{Space} = \bigO{n + h}
-\]
-
-The extra space is due to:
-
-\begin{itemize}
-\item the sorted vertex list,
-\item the active-edge map, now storing one \code{HelperState} per active wall,
-\item the outgoing-angle index,
-\item the component-id map,
-\item the bridge half-edges added for each hole.
-\end{itemize}
-
-\subsection{Triangulation Complexity}
-
-The triangulation stage is best analyzed in terms of the merged-walk length $m = n + 2h$.
-
-\textbf{1. Merged polygon construction.}
-
-\begin{itemize}
-\item \code{buildMergedPolygon} traverses the merged boundary once: $\bigO{m}$ time.
-\item Storing occurrence vertices also takes $\bigO{m}$ space.
-\item Orientation correction by a polygon-area computation is another $\bigO{m}$.
-\end{itemize}
-
-\textbf{2. Vertex classification.}
-
-Each occurrence is classified using only neighboring occurrences and a constant amount of arithmetic, so the total is $\bigO{m}$ time and $\bigO{m}$ space for the category array.
-
-\textbf{3. Monotone decomposition.}
-
-Inside \code{makeMonotone}:
-
-\begin{itemize}
-\item sorting occurrence indices by sweep order costs $\bigO{m \log m}$,
-\item building the temporary sweep boundary costs $\bigO{m}$,
-\item the active-edge sweep performs a constant number of balanced-map operations per occurrence, costing $\bigO{m \log m}$ overall,
-\item diagonal deduplication uses a set, so insert/check operations are $\bigO{1}$ average per diagonal.
-\end{itemize}
-
-So \code{makeMonotone} runs in $\bigO{m \log m}$ time and uses $\bigO{m}$ extra space.
-
-\textbf{4. Face extraction after adding diagonals.}
-
-The function \code{extractMonotoneFaces} does:
-
-\begin{itemize}
-\item build the synthetic circular embedding: $\bigO{m}$,
-\item build adjacency from polygon edges and diagonals: $\bigO{m}$ because the subdivision is planar and has only linear-size edge sets,
-\item sort each adjacency list by angle: worst-case $\bigO{m \log m}$ over all vertices,
-\item walk each directed edge once to recover faces: $\bigO{m}$.
-\end{itemize}
-
-Therefore one call to \code{extractMonotoneFaces} is $\bigO{m \log m}$ time and $\bigO{m}$ space in the worst case.
-
-\textbf{5. Triangulating monotone faces.}
-
-For a monotone face of size $s$, \code{triangulateMonotoneFace} performs:
-
-\begin{itemize}
-\item face simplification in $\bigO{s}$,
-\item top/bottom detection in $\bigO{s}$,
-\item sorting that face's vertices by sweep order in $\bigO{s \log s}$,
-\item stack-based triangulation in $\bigO{s}$.
-\end{itemize}
-
-Across all monotone faces, the total size of all face boundaries is linear in the subdivision size, so the aggregate worst-case cost is:
-
-\[
-\bigO{m \log m}
-\]
-
-\textbf{6. Final triangular-face extraction and output assembly.}
-
-After all triangulation diagonals are added, the code calls \code{extractMonotoneFaces} one more time and then runs \code{appendTriangleIfValid} on every face. That contributes another $\bigO{m \log m}$ worst-case time and $\bigO{m}$ space.
-
-\textbf{Triangulation total.}
-
-\[
-\text{Time} = \bigO{m \log m}, \qquad \text{Space} = \bigO{m}
-\]
-
-Substituting $m = n + 2h$, this becomes:
-
-\[
-\text{Time} = \bigO{(n+2h)\log(n+2h)}, \qquad \text{Space} = \bigO{n+2h}
-\]
-
-\subsection{Guard Computation Complexity}
-
-Let $t$ be the number of output triangles. Since $t = m - 2$, we have $t = \Theta(m)$.
-
-\textbf{1. Building the triangulation adjacency graph.}
-
-Each triangle contributes exactly three undirected edges, so \code{buildAdjacency} runs in $\bigO{t} = \bigO{m}$ time and uses $\bigO{m}$ space.
-
-\textbf{2. Reverse-degeneracy coloring.}
-
-The queue-based elimination phase touches each graph vertex once and each adjacency relation a constant number of times, so it is $\bigO{m}$. The reverse coloring pass is also $\bigO{m}$.
-
-Thus the coloring procedure itself is:
-
-\[
-\text{Time} = \bigO{m}, \qquad \text{Space} = \bigO{m}
-\]
-
-\textbf{3. Deduplicating original vertices by color class.}
-
-After coloring, the code inserts original \code{Vertex*} pointers into three \code{std::set} containers. Since ordered-set insertion is $\bigO{\log m}$ and there are $\bigO{m}$ occurrence insertions, this step is $\bigO{m \log m}$ in the worst case.
-
-\textbf{4. Fallback path.}
-
-If coloring fails, the fallback builds one \code{std::set<Vertex*>} from all occurrence vertices, which is also $\bigO{m \log m}$ worst-case.
-
-\textbf{Guard-stage total.}
-
-Because of the ordered-set deduplication used in the current code, the overall guard stage is:
-
-\[
-\text{Time} = \bigO{m \log m}, \qquad \text{Space} = \bigO{m}
-\]
-
-
-\subsection{Printing Complexity}
-
-\begin{itemize}
-\item Printing triangles costs $\bigO{t} = \bigO{m}$.
-\item Printing guards costs $\bigO{g}$ where $g$ is the number of selected guards, and trivially $g \le m$.
-\end{itemize}
-
-So the output stage is linear in the size of the produced answer.
-
-\subsection{Overall Complexity of the Full Algorithm}
-
-Putting all stages together:
-
-\begin{itemize}
-\item parsing and utility preparation: $\bigO{n \log n}$ worst-case because of sorting,
-\item hole merging: $\bigO{n \log n}$,
-\item triangulation on the merged walk: $\bigO{m \log m}$,
-\item guard computation: $\bigO{m \log m}$,
-\item printing: $\bigO{m}$.
-\end{itemize}
-
-Since $m = n + 2h$, the full solver runs in:
-
-\[
-\text{Time} = \bigO{(n+2h)\log(n+2h)}
-\]
-
-and uses:
-
-\[
+\text{Time} = \bigO{(n+2h)\log(n+2h)}, \qquad
 \text{Space} = \bigO{n+2h}
 \]
 
-If the standard assumption is used that $h \le n$, then this simplifies to:
-
+Under the standard assumption that $h \le n$, this simplifies to:
 \[
-\text{Time} = \bigO{n \log n}, \qquad \text{Space} = \bigO{n}
+\text{Time} = \bigO{n \log n}, \qquad
+\text{Space} = \bigO{n}
 \]
-
-
-Some important details:
-
-\begin{itemize}
-\item \code{src/main.cpp} records \code{totalVertices} and \code{holeCount} before merging so the theoretical guard bound uses the original gallery, not the modified merged walk.
-\item \code{mergeHoles} updates \code{originatingEdge} at bridge endpoints so later traversal naturally follows the merged topology.
-\item The updated hole merger keeps component-aware helper locks, so same-level sweep events from another boundary component cannot accidentally overwrite the helper information that a hole-top bridge decision still depends on.
-\item The triangulation stage uses occurrence indices instead of trying to geometrically separate repeated bridge endpoints.
-\item The guard stage prints the actual number of selected guards, not the theoretical upper bound.
-\end{itemize}
 
 \clearpage
 \section{Worked Examples}
@@ -823,7 +607,6 @@ The following examples were produced by running the current executable on repres
 \toprule
 Example & $n$ & $h$ & Expected triangles & Actual guards \\
 \midrule
-Convex polygon & 4 & 0 & 2 & 1 \\
 Concave simple polygon & 8 & 0 & 6 & 2 \\
 One-hole gallery & 8 & 1 & 8 & 3 \\
 Two-hole gallery & 20 & 2 & 22 & 5 \\
@@ -833,39 +616,7 @@ Two-hole gallery & 20 & 2 & 22 & 5 \\
 \label{tab:examples}
 \end{table}
 
-\subsection{Example 1: Convex Polygon}
-
-Geometry:
-
-\begin{itemize}
-\item outer boundary: $(0,0)$, $(6,0)$, $(6,6)$, $(0,6)$,
-\item holes: none.
-\end{itemize}
-
-\[
-n=4,\qquad h=0,\qquad n+2h-2=2,\qquad \left\lfloor \frac{n+h}{3} \right\rfloor = 1
-\]
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.64\textwidth]{example_simple_case1}
-\caption{Convex gallery: the solver adds one diagonal and one guard is enough.}
-\label{fig:example-convex}
-\end{figure}
-
-Actual output:
-
-\begin{Verbatim}[fontsize=\scriptsize]
-2
-0 0 6 0 6 6
-0 0 6 6 0 6
-1
-0 0
-\end{Verbatim}
-
-This example is the clean baseline for the entire pipeline. There are no holes and no reflex vertices, so the output checks that the parser, triangulation printer, and guard printer all behave correctly in the simplest possible case.
-
-\subsection{Example 2: Concave Simple Polygon}
+\subsection{Example 1: Concave Simple Polygon}
 
 Geometry:
 
@@ -885,24 +636,9 @@ n=8,\qquad h=0,\qquad n+2h-2=6,\qquad \left\lfloor \frac{n+h}{3} \right\rfloor =
 \label{fig:example-concave}
 \end{figure}
 
-Actual output:
-
-\begin{Verbatim}[fontsize=\scriptsize]
-6
-0 0 8 0 8 2
-0 0 8 2 5 2
-0 0 5 2 0 7
-5 2 5 5 0 7
-5 5 8 5 8 7
-5 5 8 7 0 7
-2
-0 0
-5 5
-\end{Verbatim}
-
 This example is the first one that exercises reflex geometry. The code has to classify non-convex vertices correctly, add the right diagonals, and still end with exactly six triangles.
 
-\subsection{Example 3: One-Hole Gallery}
+\subsection{Example 2: One-Hole Gallery}
 
 Geometry:
 
@@ -922,24 +658,6 @@ n=8,\qquad h=1,\qquad n+2h-2=8,\qquad \left\lfloor \frac{n+h}{3} \right\rfloor =
 \label{fig:example-one-hole}
 \end{figure}
 
-Actual output:
-
-\begin{Verbatim}[fontsize=\scriptsize]
-8
-0 0 8 3 3 3
-0 0 3 3 0 12
-0 0 12 0 8 3
-12 0 12 12 8 3
-12 12 3 8 8 8
-12 12 8 8 8 3
-12 12 0 12 3 8
-3 3 3 8 0 12
-3
-0 12
-3 8
-8 3
-\end{Verbatim}
-
 This example shows why the bridge code matters. A correct run must:
 
 \begin{itemize}
@@ -950,7 +668,7 @@ This example shows why the bridge code matters. A correct run must:
 \item still produce exactly eight triangles.
 \end{itemize}
 
-\subsection{Example 4: Irregular Gallery with Two Holes}
+\subsection{Example 3: Irregular Gallery with Two Holes}
 
 Geometry:
 
@@ -971,40 +689,6 @@ n=20,\qquad h=2,\qquad n+2h-2=22,\qquad \left\lfloor \frac{n+h}{3} \right\rfloor
 \label{fig:example-two-holes}
 \end{figure}
 
-Actual output:
-
-\begin{Verbatim}[fontsize=\scriptsize]
-22
-0 0 10 0 13 2
-0 0 13 2 -1 1
-13 2 5.5 3.5 4 1.5
-13 2 4 1.5 -1 1
-13 2 14 6 5.5 3.5
-14 6 10 5.5 5.5 3.5
-14 6 12 10 10.5 8
-14 6 10.5 8 10 5.5
-12 10 8 12 4 11
-12 10 4 11 1 9
-12 10 1 9 8.5 8.5
-12 10 8.5 8.5 10.5 8
-10 5.5 8 6 4.5 5.5
-10 5.5 4.5 5.5 5.5 3.5
-4 1.5 2 2 -1 1
-2 2 2 5 -2 3
-2 2 -2 3 -1 1
-2 5 4.5 5.5 -1 6
-2 5 -1 6 -2 3
-4.5 5.5 8 6 -1 6
-8 6 8.5 8.5 -1 6
-8.5 8.5 1 9 -1 6
-5
-13 2
-12 10
--1 6
-2 2
-10 5.5
-\end{Verbatim}
-
 This is the best stress example for the current code. It forces:
 
 \begin{itemize}
@@ -1014,66 +698,14 @@ This is the best stress example for the current code. It forces:
 \item a guard set that is strictly smaller than the theoretical worst-case bound.
 \end{itemize}
 
-\clearpage
-\section{File-by-File Walkthrough}
-
-\subsection{Main Driver}
-
-\code{src/main.cpp} is short but important because it defines the exact execution order:
-
-\begin{enumerate}
-\item parse one gallery,
-\item count original vertices,
-\item count holes,
-\item merge holes,
-\item triangulate the merged gallery,
-\item compute guards from the triangulation result,
-\item print triangles and guards.
-\end{enumerate}
-
-The sequence is correct: both the triangle formula and the guard upper bound depend on the original gallery counts, so those numbers must be captured before hole merging changes the topology.
-
-\subsection{Parser Module}
-
-\code{src/parser.cpp} is responsible for converting coordinate input into the half-edge gallery representation. Its strongest contribution is the orientation normalization step. Without that invariant, the later sweep-line predicates would become unreliable.
-
-\subsection{Polygon Utility Module}
-
-\code{src/polygon_utils.cpp} is small, but it gives the traversal routines that keep the rest of the code clean. In particular, the hole merger depends on \code{getTopmostVertices} and the guard stage depends on \code{getTotalVertexCount}.
-
-\subsection{Hole Merger}
-
-\code{src/hole_merger.cpp} combines geometric ordering, angular indexing, component tracking, same-level helper locking, bridge target selection, and local pointer rewiring.
-
-\subsection{Triangulation Engine}
-
-\code{src/triangulation.cpp} is the densest algorithmic file. It contains:
-
-\begin{itemize}
-\item occurrence-level polygon construction,
-\item vertex classification,
-\item monotone decomposition,
-\item face extraction by circular embedding,
-\item monotone-face triangulation,
-\item final triangle filtering and printing support.
-\end{itemize}
-
-\subsection{Guard Module}
-
-\code{src/guards.cpp} converts triangulation output into a graph problem and then back into geometric guard coordinates. The code is concise, but it correctly captures the theoretical idea: 3-color the triangulation graph and choose the smallest color class.
-
-\subsection{Build and Run Layer}
-
-\code{Makefile} compiles all source files in \code{src/} into \code{build/art_gallery}. \code{test.sh} builds the solver and runs it on the supplied input.
-
 \section{Conclusion}
 
-The program solves the art gallery problem for a polygon with holes by building a consistent geometric representation of the input, converting the gallery into a single merged
-boundary, triangulating that merged polygon, and then selecting a valid guard set from the triangulation. It first parses the outer boundary and holes into a half-edge structure. It
+The program implements a complete pipeline for the art gallery problem on a polygon with holes by building a consistent geometric representation of the input, converting the gallery into a single merged
+boundary, triangulating that merged polygon, and then selecting a guard set from the triangulation. It first parses the outer boundary and holes into a half-edge structure and performs input validation. It
 then inserts bridges to connect each hole to a suitable wall so that the remaining stages can work on one boundary walk. The triangulation stage treats this merged walk as an ordered
 sequence of positions, which allows repeated bridge endpoints to be handled correctly, decomposes the polygon into monotone faces, recovers those faces from the diagonal graph, and
 triangulates them. Finally, the guard computation builds the adjacency graph induced by the triangulation, computes a three-coloring, and outputs the smallest color class as the
-guard set. The result is a complete end-to-end pipeline that takes the original gallery as input and returns both a valid triangulation and a guard placement on the original
+guard set. The result is a complete end-to-end pipeline that takes the original gallery as input and returns a triangulation together with a guard placement on the original
 vertices.
 
 \end{document}
