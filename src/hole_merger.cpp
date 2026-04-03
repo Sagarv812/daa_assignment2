@@ -1,77 +1,67 @@
 #include "hole_merger.hpp"
 #include "polygon_utils.hpp"
-#include <map>
-#include <vector>
+
 #include <algorithm>
-#include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <cfloat>
 #include <limits>
+#include <map>
 #include <unordered_map>
+#include <vector>
 
-double getRayIntersectionX(const Vertex* M,const HalfEdge* E){
-    Vertex* A = E->origin;
-    Vertex* B = E->nextEdge->origin;
+double getRayIntersectionX(const Vertex* M, const HalfEdge* E) {
+    const Vertex* A = E->origin;
+    const Vertex* B = E->nextEdge->origin;
 
-    // Ray and edge are parallel then return false;
-    // even if ray coincides with with edge it 
-    // will intersect with another edge so it works and we can safely return false 
-    if(A->y == B->y){
+    // Horizontal edges do not contribute to the left-ray intersection.
+    if (A->y == B->y) {
         return DBL_MAX;
     }
 
-    double minY = std::min(A->y, B->y);
-    double maxY = std::max(A->y, B->y);
-    // Checking bounds of edges and ray
-    if(M->y < minY || M->y >= maxY){
+    const double minY = std::min(A->y, B->y);
+    const double maxY = std::max(A->y, B->y);
+    if (M->y < minY || M->y >= maxY) {
         return DBL_MAX;
     }
 
-    // doing the maths
-    double x_int = A->x + (B->x - A->x) * (M->y - A->y) / (B->y - A->y);
-    
-    // X-direction Check
-    if(x_int < M->x){
+    const double x_int = A->x + (B->x - A->x) * (M->y - A->y) / (B->y - A->y);
+    if (x_int < M->x) {
         return DBL_MAX;
     }
 
     return x_int;
 }
+
 struct EdgeComparator {
     bool operator()(const HalfEdge* a, const HalfEdge* b) const {
-        if(a == b){
+        if (a == b) {
             return false;
         }
-        // Lower vertices of both edges a and b
-        double minaY = std::min(a->origin->y, a->nextEdge->origin->y);
-        double minbY = std::min(b->origin->y, b->nextEdge->origin->y);
 
-        // Now (given that both edges have common y assumption)
+        const double minaY = std::min(a->origin->y, a->nextEdge->origin->y);
+        const double minbY = std::min(b->origin->y, b->nextEdge->origin->y);
         double yRay = std::max(minaY, minbY);
-        // fake vertex so we can use our function comfortably
-        Vertex rayVObj{-DBL_MAX, yRay, nullptr}; Vertex* rayV = &rayVObj;
+
+        Vertex rayVObj{-DBL_MAX, yRay, nullptr};
+        Vertex* rayV = &rayVObj;
         double int_a = getRayIntersectionX(rayV, a);
         double int_b = getRayIntersectionX(rayV, b);
-        if(int_a == int_b){
-            //might be that it's a vertex from which 2 edges are originating so just take a small distance above
-            double maxaY = std::max(a->origin->y, a->nextEdge->origin->y);
-            double maxbY = std::max(b->origin->y, b->nextEdge->origin->y);
-            double yRay2 = std::min(maxaY, maxbY);
-            rayV->y =  (yRay2+yRay)/2;
-            
+
+        if (int_a == int_b) {
+            const double maxaY = std::max(a->origin->y, a->nextEdge->origin->y);
+            const double maxbY = std::max(b->origin->y, b->nextEdge->origin->y);
+            const double yRay2 = std::min(maxaY, maxbY);
+            rayV->y = (yRay2 + yRay) / 2;
+
             int_a = getRayIntersectionX(rayV, a);
             int_b = getRayIntersectionX(rayV, b);
         }
-        
-        if(int_a == int_b) return a<b; // To prevent something called silent deletion by sets
-        if(int_a < int_b){
-            return true;
-        }else{
-            return false;
+
+        if (int_a == int_b) {
+            return a < b;
         }
-        // Assuming Edges can't be equal cuz of polygon
-        // Also assuming we won't compare 2 edges with no common y value 
-        
+        return int_a < int_b;
     }
 };
 
@@ -86,24 +76,19 @@ struct HelperState {
 
 using ActiveEdges = std::map<HalfEdge*, HelperState, EdgeComparator>;
 
-auto findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges){
-    
-    // Making the dummyEdge for doing Binary Search
+auto findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges) {
     Vertex vTop = {M->x, M->y - 1.0, nullptr};
     Vertex vBot = {M->x, M->y + 1.0, nullptr};
     HalfEdge eBot = {&vBot, nullptr, nullptr, nullptr, nullptr};
     HalfEdge dummyEdge = {&vTop, nullptr, &eBot, nullptr, nullptr};
 
-    // Binary Search (log n)
     auto it = activeEdges.upper_bound(&dummyEdge);
-
-    // Validate and Return 
-    if(it != activeEdges.begin()){
-        it--;
-        return it;
+    if (it == activeEdges.begin()) {
+        return activeEdges.end();
     }
-    // Could not find right wall :( 
-    return activeEdges.end();
+
+    --it;
+    return it;
 }
 
 bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, double bY);
@@ -246,6 +231,17 @@ Vertex* getBridgeTarget(const HelperState& state, Vertex* queryVertex) {
     return state.maxLockedHelper;
 }
 
+void updateActiveEdge(HalfEdge* edge,
+                      double otherEndpointY,
+                      Vertex* helperVertex,
+                      ActiveEdges& activeEdges) {
+    if (otherEndpointY > helperVertex->y) {
+        activeEdges.erase(edge);
+    } else if (otherEndpointY < helperVertex->y) {
+        activeEdges[edge] = makeUnlockedHelper(helperVertex);
+    }
+}
+
 }  // namespace
 
 bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, double bY) {
@@ -290,18 +286,18 @@ HalfEdge* findValidSplicePoint(Vertex* target, Vertex* v, VertexOutgoingIndex& o
     return candidateIt->second;
 }
 
-void buildBridge(Vertex* M, Vertex* Target, Face* gallery, VertexOutgoingIndex& outgoingIndex){
-    // Bridging outgoing and incoming edges of M
+void buildBridge(Vertex* M, Vertex* target, Face* gallery, VertexOutgoingIndex& outgoingIndex) {
     HalfEdge* e_M_out = M->originatingEdge;
     HalfEdge* e_M_in = M->originatingEdge->prevEdge;
 
-    // Bridging outgoing and incoming edges of T
-    HalfEdge* e_T_out = findValidSplicePoint(Target, M, outgoingIndex);
-    if (!e_T_out) e_T_out = Target->originatingEdge;
+    HalfEdge* e_T_out = findValidSplicePoint(target, M, outgoingIndex);
+    if (!e_T_out) {
+        e_T_out = target->originatingEdge;
+    }
     HalfEdge* e_T_in = e_T_out->prevEdge;
 
     HalfEdge* bridge = new HalfEdge{M, gallery, nullptr, nullptr, nullptr};
-    HalfEdge* bridgeTwin = new HalfEdge{Target, gallery,nullptr, nullptr, nullptr};
+    HalfEdge* bridgeTwin = new HalfEdge{target, gallery, nullptr, nullptr, nullptr};
     bridge->twin = bridgeTwin;
     bridgeTwin->twin = bridge;
 
@@ -318,22 +314,21 @@ void buildBridge(Vertex* M, Vertex* Target, Face* gallery, VertexOutgoingIndex& 
     e_M_out->prevEdge = bridgeTwin;
 
     M->originatingEdge = bridge;
-    Target->originatingEdge = bridgeTwin;
+    target->originatingEdge = bridgeTwin;
 
     addOutgoingEdgeToIndex(bridge, outgoingIndex);
     addOutgoingEdgeToIndex(bridgeTwin, outgoingIndex);
 }
-void mergeHoles(Face* gallery){
-    // Getting holes by storing the topMostVertices of those holes  
+
+void mergeHoles(Face* gallery) {
     std::vector<Vertex*> topmostVertices = getTopmostVertices(gallery);
-    auto compY = [](Vertex* a, Vertex* b){
-        if(a->y != b->y){
+    const auto compY = [](Vertex* a, Vertex* b) {
+        if (a->y != b->y) {
             return a->y > b->y;
-        }else{
-            return a->x < b->x;
         }
+        return a->x < b->x;
     };
-    // Vertices stored from top to bottom 
+
     std::vector<Vertex*> sweepVertices = getVerticesSorted(gallery, compY);
     VertexOutgoingIndex outgoingIndex;
     addCycleToOutgoingIndex(gallery->boundaryEdge, outgoingIndex);
@@ -346,54 +341,49 @@ void mergeHoles(Face* gallery){
         addCycleVerticesToComponentMap(gallery->InnerComponents[i], i + 1, vertexComponentIds);
     }
 
-    // Making Active Edges
     ActiveEdges activeEdges;
-
     int nextHoleIdx = 0;
 
-    // Going through all the vertices one by one 
-    for(Vertex* collidingVertex : sweepVertices){
+    for (Vertex* collidingVertex : sweepVertices) {
         auto preLeftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
         HalfEdge* preLeftWall = (preLeftWall_it != activeEdges.end()) ? preLeftWall_it->first : nullptr;
         bool didProcessHoleTop = false;
 
-        if(nextHoleIdx < (int)topmostVertices.size() && collidingVertex == topmostVertices[nextHoleIdx]){
-            if(preLeftWall_it != activeEdges.end()){
-                Vertex* Target = getBridgeTarget(preLeftWall_it->second, collidingVertex);
-                 buildBridge(collidingVertex, Target, gallery, outgoingIndex);
+        if (nextHoleIdx < static_cast<int>(topmostVertices.size()) &&
+            collidingVertex == topmostVertices[nextHoleIdx]) {
+            if (preLeftWall_it != activeEdges.end()) {
+                Vertex* target = getBridgeTarget(preLeftWall_it->second, collidingVertex);
+                buildBridge(collidingVertex, target, gallery, outgoingIndex);
             }
 
             didProcessHoleTop = true;
-            nextHoleIdx++;
+            ++nextHoleIdx;
         }
 
         HalfEdge* incomingEdge = collidingVertex->originatingEdge->prevEdge;
         HalfEdge* outgoingEdge = collidingVertex->originatingEdge;
 
-        if(incomingEdge->origin->y > collidingVertex->y) activeEdges.erase(incomingEdge);
-        else if(incomingEdge->origin->y < collidingVertex->y) activeEdges[incomingEdge] = makeUnlockedHelper(collidingVertex);
-
-        if(outgoingEdge->nextEdge->origin->y > collidingVertex->y) activeEdges.erase(outgoingEdge);
-        else if(outgoingEdge->nextEdge->origin->y < collidingVertex->y) activeEdges[outgoingEdge] = makeUnlockedHelper(collidingVertex);
+        updateActiveEdge(incomingEdge, incomingEdge->origin->y, collidingVertex, activeEdges);
+        updateActiveEdge(outgoingEdge, outgoingEdge->nextEdge->origin->y, collidingVertex, activeEdges);
 
         auto leftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
-        if(leftWall_it != activeEdges.end()){
-            if(didProcessHoleTop){
+        if (leftWall_it != activeEdges.end()) {
+            if (didProcessHoleTop) {
                 setHoleTopHelper(leftWall_it->second, collidingVertex, vertexComponentIds[collidingVertex]);
-            }else if(canOverwriteWithOrdinary(leftWall_it->second, collidingVertex,
-                                              vertexComponentIds[collidingVertex])){
+            } else if (canOverwriteWithOrdinary(leftWall_it->second,
+                                                collidingVertex,
+                                                vertexComponentIds[collidingVertex])) {
                 applyOrdinaryHelperUpdate(leftWall_it->second, collidingVertex,
                                           vertexComponentIds[collidingVertex]);
             }
         }
 
-        if(didProcessHoleTop && preLeftWall != nullptr){
+        if (didProcessHoleTop && preLeftWall != nullptr) {
             auto preservedLeftWall_it = activeEdges.find(preLeftWall);
-            if(preservedLeftWall_it != activeEdges.end()){
+            if (preservedLeftWall_it != activeEdges.end()) {
                 setHoleTopHelper(preservedLeftWall_it->second, collidingVertex,
                                  vertexComponentIds[collidingVertex]);
             }
         }
-        
     }
 }

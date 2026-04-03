@@ -9,21 +9,23 @@
 
 namespace {
 
+void addAdjacencyEdge(std::vector<std::unordered_set<int>>& adjacency, int u, int v) {
+    adjacency[u].insert(v);
+    adjacency[v].insert(u);
+}
+
 std::vector<std::unordered_set<int>> buildAdjacency(const std::vector<TriangleIndices>& triangles,
                                                     int vertexCount) {
     std::vector<std::unordered_set<int>> adjacency(vertexCount);
     for (const TriangleIndices& triangle : triangles) {
-        adjacency[triangle[0]].insert(triangle[1]);
-        adjacency[triangle[0]].insert(triangle[2]);
-        adjacency[triangle[1]].insert(triangle[0]);
-        adjacency[triangle[1]].insert(triangle[2]);
-        adjacency[triangle[2]].insert(triangle[0]);
-        adjacency[triangle[2]].insert(triangle[1]);
+        addAdjacencyEdge(adjacency, triangle[0], triangle[1]);
+        addAdjacencyEdge(adjacency, triangle[0], triangle[2]);
+        addAdjacencyEdge(adjacency, triangle[1], triangle[2]);
     }
     return adjacency;
 }
 
-bool colorOuterplanarGraph(const std::vector<TriangleIndices>& triangles,
+bool colorGraph(const std::vector<TriangleIndices>& triangles,
                            int vertexCount,
                            std::vector<int>& color) {
     std::vector<std::unordered_set<int>> adjacency = buildAdjacency(triangles, vertexCount);
@@ -101,7 +103,7 @@ GuardSolution computeGuards(const TriangulationResult& triangulation, int totalV
     }
 
     std::vector<int> color(triangulation.occurrenceVertices.size(), -1);
-    if (!colorOuterplanarGraph(triangulation.triangleIndices,
+    if (!colorGraph(triangulation.triangleIndices,
                                static_cast<int>(triangulation.occurrenceVertices.size()),
                                color)) {
         std::set<Vertex*> fallbackVertices(triangulation.occurrenceVertices.begin(),

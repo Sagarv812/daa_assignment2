@@ -7,3 +7,9 @@ plots/
 *.txt
 report/latex_build/
 !report/latex_build/report.pdf
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex*

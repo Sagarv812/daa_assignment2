@@ -37,16 +37,16 @@
 \newcommand{\submission}{\code{inc/}, \code{src/}, \code{Makefile}, and \code{test.sh}}
 
 \title{DAA Assignment 2 Report\\Triangulation and Guard Placement in a Polygon with Holes}
-\author{Sagar Venkatesh}
+\author{24B1021\\24B1037}
 \date{\today}
 
 \begin{document}
 
 \maketitle
 
-\section*{Abstract}
+\section*{Overview}
 
-This report explains the current cleaned implementation of the assignment solver in the submitted codebase. The program reads a polygon with holes, converts it into a single merged boundary using bridge insertion, decomposes the merged boundary into monotone pieces, triangulates those pieces, and finally computes a constructive guard set by 3-coloring the triangulation graph. The report focuses only on the submitted files in \submission. It does not rely on auxiliary scripts or named testcase files, and all worked examples are described directly in geometric terms.
+The program reads a polygon with holes, converts it into a single merged boundary using bridge insertion, decomposes the merged boundary into monotone pieces, triangulates those pieces, and finally computes a constructive guard set by 3-coloring the triangulation graph.
 
 \section{Assignment Goal}
 
@@ -77,9 +77,9 @@ The implementation is organized around two formulas:
 
 The first formula is a correctness target for triangulation. The second formula gives the theoretical upper bound used by the guard stage.
 
-\section{Submitted Components}
+\section{Modular Components}
 
-This report covers only the files that are part of the submission.
+Here is a list of all the files submitted and their function:
 
 \begin{table}[H]
 \centering
@@ -95,17 +95,17 @@ Component & Responsibility \\
 \code{inc/triangulation.hpp} and \code{src/triangulation.cpp} & Build the merged polygon walk, classify vertices, add diagonals, extract faces, and output triangles. \\
 \code{inc/guards.hpp} and \code{src/guards.cpp} & Build the triangulation graph, 3-color it, and choose a guard set. \\
 \code{src/main.cpp} & Orchestrates the full pipeline for every test case. \\
+\code{visualize.py} & Converts the text output into a triangulated graph along with the guards. \\
 \code{Makefile} & Builds the executable \code{build/art_gallery} with C++17. \\
-\code{test.sh} & Submission-facing wrapper that builds and runs the solver on a supplied input file. \\
+\code{test.sh} & Submission script that builds and runs the solver on a given input file. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-The execution flow seen by the user is intentionally simple:
+To run the program with a custom input just run:
 
 \begin{Verbatim}[fontsize=\small]
-make
-./test.sh input.txt
+./test.sh <input_file>
 \end{Verbatim}
 
 \section{End-to-End Pipeline}
@@ -114,7 +114,7 @@ The solver is easiest to understand as a sequence of seven stages. The first thr
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.78\textwidth,height=0.76\textheight,keepaspectratio]{pipeline_overview}
+\includegraphics[width=0.78\textwidth,height=0.76\textheight,keepaspectratio]{pipeline_overview.png}
 \caption{High-level structure of the current implementation.}
 \label{fig:pipeline}
 \end{figure}
@@ -131,7 +131,7 @@ That keeps the difficult part localized inside the hole-merging phase and lets t
 
 \subsection{Half-Edge Structures}
 
-The program does not build a full general-purpose DCEL. Instead, it uses a lightweight structure that is exactly strong enough for this assignment.
+The program does not build a full general-purpose DCEL. Instead, it uses a lightweight structure that is good enough for this task.
 
 \begin{table}[H]
 \centering
@@ -202,7 +202,7 @@ After parsing is complete, \code{src/polygon_utils.cpp} supplies the shared trav
 
 \subsection{Why Hole Merging Comes First}
 
-The triangulation algorithm used in the submission expects a single polygonal walk. A gallery with holes is therefore converted into one merged boundary before triangulation begins.
+The triangulation algorithm expects a single polygonal walk. A gallery with holes is therefore converted into one merged boundary before triangulation begins.
 
 The implementation in \code{src/hole_merger.cpp} performs a top-down sweep over all vertices. The key event is the moment when the sweep reaches the topmost vertex of a hole. At that moment, the hole is connected to the nearest valid wall on its left.
 
@@ -215,7 +215,7 @@ The implementation in \code{src/hole_merger.cpp} performs a top-down sweep over 
 
 \subsection{Three Tracking Structures Drive the Merge}
 
-The updated hole merger is no longer just ``active edges plus one helper vertex.'' It maintains three synchronized structures because the sweep now has to distinguish geometry, local topology, and boundary-component ownership:
+The Hole Merger maintains three synchronized structures because the sweep has to distinguish geometry, local topology, and boundary-component ownership:
 
 \begin{enumerate}
 \item \textbf{Active-edge map.} A balanced map from active wall edges to full \code{HelperState} records. The key order comes from sweep-line intersection on the current horizontal ray.
@@ -233,7 +233,7 @@ The three structures answer three different questions:
 
 \subsection{What HelperState Stores}
 
-The new \code{HelperState} structure is the main change in the current \code{src/hole_merger.cpp}.
+The \code{HelperState} structure is what allows proper helper vertex tracking while merging.
 
 \begin{table}[H]
 \centering
@@ -253,7 +253,7 @@ Field & Purpose \\
 \label{tab:helper-state}
 \end{table}
 
-The helper-related support functions now divide the update logic cleanly:
+The helper-related support functions divide the update logic cleanly:
 
 \begin{itemize}
 \item \code{makeUnlockedHelper} and \code{setUnlockedHelper} create ordinary unlocked helper states,
@@ -321,7 +321,7 @@ This logic appears in the following key functions:
 \item \code{buildBridge}: allocates the bridge pair and rewires local topology.
 \end{itemize}
 
-\subsection{Why the Target Vertex Needs Angular Disambiguation}
+\subsection{Why the Target Vertex Needs Angular Checks}
 
 Once one bridge has already been inserted, a later bridge may hit a vertex that now has multiple outgoing edges. If the new bridge is inserted against the wrong outgoing edge, the merged walk becomes topologically incorrect even if the bridge endpoints themselves were geometrically sensible.
 
@@ -333,7 +333,7 @@ That is why the code uses:
 \item a sector-membership test.
 \end{itemize}
 
-Together, these checks make the splice robust against earlier modifications around the target vertex. The ordered outgoing map stores keys of the form \code{(angle, edgeId)}, and \code{findValidSplicePoint()} probes that map with \code{upper\_bound}. This lets the code locate the outgoing edge immediately preceding the desired bridge direction and then verify that the bridge lies inside the correct local sector.
+Together, these checks make the splice robust against earlier modifications around the target vertex. The ordered outgoing map stores keys of the form \code{(angle, edgeId)}, and \code{findValidSplicePoint()} probes that map with \code{upper_bound}. This lets the code locate the outgoing edge immediately preceding the desired bridge direction and then verify that the bridge lies inside the correct local sector.
 
 \begin{figure}[H]
 \centering
@@ -358,7 +358,7 @@ That last detail is crucial. The triangulation stage does not treat the merged b
 
 \subsection{Merged Walk as an Occurrence-Indexed Polygon}
 
-The current version of \code{src/triangulation.cpp} first traverses the merged boundary and copies each visited vertex into a \code{PolygonVertex} record:
+The program in \code{src/triangulation.cpp} first traverses the merged boundary and copies each visited vertex into a \code{PolygonVertex} record:
 
 \begin{itemize}
 \item the coordinates are copied directly,
@@ -458,17 +458,17 @@ Two details matter for correctness here:
 
 \begin{itemize}
 \item the embedding is the same one built by the code, namely occurrence $i$ placed at angle $2\pi i / m$,
-\item the diagonal set must be outerplanar, so the illustrative chords must be noncrossing.
+\item the diagonals must stay noncrossing when drawn on the circular placement, so the resulting graph can be traced face by face.
 \end{itemize}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.72\textwidth]{outerplanar_embedding}
-\caption{Synthetic circular embedding used in \code{extractMonotoneFaces}. Left: a noncrossing outerplanar graph on the same counter-clockwise circular placement used by the code. Right: a local example of the actual traversal rule, where arriving along \code{0 -> 4} makes the walk continue along \code{4 -> 5} because vertex 5 is the previous angular neighbor of 0 in the sorted rotation order around 4.}
+\includegraphics[width=0.60\textwidth]{outerplanar_embedding}
+\caption{Circular embedding used in \code{extractMonotoneFaces}. The occurrence indices are placed on the same counter-clockwise circle used by the code, the diagonals remain noncrossing, and the highlighted local step shows the actual traversal rule: arriving along \code{0 -> 4} makes the walk continue along \code{4 -> 5} because 5 is the previous angular neighbor of 0 in the sorted rotation order around 4.}
 \label{fig:outerplanar}
 \end{figure}
 
-This is one of the strongest parts of the implementation because it avoids introducing another heavy topology structure while still recovering faces reliably from the diagonal graph.
+This avoids introducing another heavy topology structure while still recovering faces reliably from the diagonal graph.
 
 \subsection{Triangulating Each Monotone Face}
 
@@ -483,17 +483,6 @@ For every extracted monotone face, \code{triangulateMonotoneFace} runs the stand
 \end{enumerate}
 
 Then the code extracts faces one more time. Any face with exactly three non-degenerate vertices is accepted by \code{appendTriangleIfValid}. This function also normalizes orientation so the printed triangle order is consistent.
-
-\subsection{Important Cleaned-Code Details}
-
-The current cleaned triangulation code contains a few details that are easy to miss but important to explain:
-
-\begin{itemize}
-\item \code{buildMergedPolygon} now uses the merged walk directly rather than inventing perturbed coordinates.
-\item \code{simplifyFace} removes duplicate consecutive occurrences but intentionally preserves genuine collinear occurrences, because different bridge events may need those vertices to remain explicit.
-\item \code{appendTriangleIfValid} rejects zero-area triangles before they reach output.
-\item \code{printTriangles} prints exactly the triangle vertex coordinates expected by the assignment output format.
-\end{itemize}
 
 \section{Guard Computation}
 
@@ -514,18 +503,18 @@ The graph built by \code{src/guards.cpp} has:
 \item one edge between every pair of occurrence indices that share a triangle.
 \end{itemize}
 
-Because the graph comes from a triangulated polygonal subdivision, it is outerplanar.
+The boundary edges and inserted diagonals form a graph that can be drawn on the same circle without any edge crossings, with every occurrence index staying on the outer boundary.
 
-\subsection{Reverse-Degeneracy 3-Coloring}
+\subsection{3-Coloring}
 
-The function \code{colorOuterplanarGraph} colors the graph in two passes:
+The function \code{colorGraph} colors the graph in two passes:
 
 \begin{enumerate}
 \item repeatedly remove a vertex of degree at most two, recording the removal order,
 \item traverse that order backward and color each vertex with the first available color.
 \end{enumerate}
 
-This works because outerplanar graphs are 2-degenerate, so the forward elimination always succeeds on a correct outerplanar triangulation.
+This works because, in a correct noncrossing triangulation drawn on the circular embedding, there is always a remaining occurrence with only two unprocessed neighbors, so the elimination step can keep going.
 
 \begin{figure}[H]
 \centering
@@ -574,7 +563,7 @@ This is consistent with the triangle formula for a simple polygon obtained after
 m - 2 = n + 2h - 2
 \]
 
-So the later triangulation and guard stages are most naturally analyzed in terms of $m$, and then converted back to $(n,h)$ at the end.
+So the later triangulation and guard stages are analyzed in terms of $m$, and then converted back to $(n,h)$ at the end.
 
 \subsection{Parsing and Utility Routines}
 
@@ -686,7 +675,7 @@ Inside \code{makeMonotone}:
 \item sorting occurrence indices by sweep order costs $\bigO{m \log m}$,
 \item building the temporary sweep boundary costs $\bigO{m}$,
 \item the active-edge sweep performs a constant number of balanced-map operations per occurrence, costing $\bigO{m \log m}$ overall,
-\item diagonal deduplication uses a hash set, so insert/check operations are $\bigO{1}$ average per diagonal.
+\item diagonal deduplication uses a set, so insert/check operations are $\bigO{1}$ average per diagonal.
 \end{itemize}
 
 So \code{makeMonotone} runs in $\bigO{m \log m}$ time and uses $\bigO{m}$ extra space.
@@ -771,7 +760,6 @@ Because of the ordered-set deduplication used in the current code, the overall g
 \text{Time} = \bigO{m \log m}, \qquad \text{Space} = \bigO{m}
 \]
 
-If the deduplication containers were changed from \code{std::set} to hashing, this stage could be reduced to linear time in practice. But for the current submitted code, $\bigO{m \log m}$ is the correct worst-case bound.
 
 \subsection{Printing Complexity}
 
@@ -806,15 +794,14 @@ and uses:
 \text{Space} = \bigO{n+2h}
 \]
 
-If the standard assignment assumption is used that $h \le n$, then this simplifies to:
+If the standard assumption is used that $h \le n$, then this simplifies to:
 
 \[
 \text{Time} = \bigO{n \log n}, \qquad \text{Space} = \bigO{n}
 \]
 
-So the end-to-end implementation remains in the intended near-optimal sweep-line complexity class while still handling hole bridging, repeated bridge endpoints, face extraction, triangulation, and guard construction.
 
-Several engineering decisions in the code deserve explicit mention:
+Some important details:
 
 \begin{itemize}
 \item \code{src/main.cpp} records \code{totalVertices} and \code{holeCount} before merging so the theoretical guard bound uses the original gallery, not the modified merged walk.
@@ -1048,15 +1035,15 @@ The sequence is correct: both the triangle formula and the guard upper bound dep
 
 \subsection{Parser Module}
 
-\code{src/parser.cpp} is responsible for converting assignment-format coordinate input into the half-edge gallery representation. Its strongest contribution is the orientation normalization step. Without that invariant, the later sweep-line predicates would become unreliable.
+\code{src/parser.cpp} is responsible for converting coordinate input into the half-edge gallery representation. Its strongest contribution is the orientation normalization step. Without that invariant, the later sweep-line predicates would become unreliable.
 
 \subsection{Polygon Utility Module}
 
-\code{src/polygon_utils.cpp} is small, but it supplies the cross-cutting traversal routines that keep the rest of the code clean. In particular, the hole merger depends on \code{getTopmostVertices} and the guard stage depends on \code{getTotalVertexCount}.
+\code{src/polygon_utils.cpp} is small, but it gives the traversal routines that keep the rest of the code clean. In particular, the hole merger depends on \code{getTopmostVertices} and the guard stage depends on \code{getTotalVertexCount}.
 
 \subsection{Hole Merger}
 
-\code{src/hole_merger.cpp} is the most delicate topological module in the submission. In the current version it combines geometric ordering, angular indexing, component tracking, same-level helper locking, bridge-target disambiguation, and local pointer rewiring. If this file is wrong, the rest of the pipeline cannot recover because every later stage assumes the merged boundary walk is valid.
+\code{src/hole_merger.cpp} combines geometric ordering, angular indexing, component tracking, same-level helper locking, bridge target selection, and local pointer rewiring.
 
 \subsection{Triangulation Engine}
 
@@ -1066,12 +1053,10 @@ The sequence is correct: both the triangle formula and the guard upper bound dep
 \item occurrence-level polygon construction,
 \item vertex classification,
 \item monotone decomposition,
-\item face extraction by synthetic outerplanar embedding,
+\item face extraction by circular embedding,
 \item monotone-face triangulation,
 \item final triangle filtering and printing support.
 \end{itemize}
-
-The face-extraction logic is the most distinctive part of the solver. It is also the part that explains why the report spends so much time on occurrence indices and circular embeddings.
 
 \subsection{Guard Module}
 
@@ -1079,18 +1064,16 @@ The face-extraction logic is the most distinctive part of the solver. It is also
 
 \subsection{Build and Run Layer}
 
-\code{Makefile} compiles all source files in \code{src/} into \code{build/art_gallery}. \code{test.sh} is intentionally thin: it builds the solver and runs it on the supplied input. That separation keeps the build interface simple while the algorithmic complexity stays inside the C++ modules.
+\code{Makefile} compiles all source files in \code{src/} into \code{build/art_gallery}. \code{test.sh} builds the solver and runs it on the supplied input.
 
 \section{Conclusion}
 
-The current cleaned submission is a genuine end-to-end solution to the art gallery assignment with holes. Its overall structure is strong for three reasons:
-
-\begin{itemize}
-\item it keeps the topology manipulation localized in one bridge-insertion phase,
-\item it uses occurrence-level indexing to handle repeated bridge endpoints cleanly,
-\item it turns the final guard computation into a well-structured graph-coloring problem.
-\end{itemize}
-
-The most technically interesting parts of the current code are the component-aware helper locking inside the hole merger, the local bridge splice, the face extraction based on a synthetic circular embedding, and the way the guard stage chooses an actual guard set that can be smaller than the theoretical bound. The worked examples show that the same pipeline handles convex, concave, one-hole, and multi-hole galleries correctly.
+The program solves the art gallery problem for a polygon with holes by building a consistent geometric representation of the input, converting the gallery into a single merged
+boundary, triangulating that merged polygon, and then selecting a valid guard set from the triangulation. It first parses the outer boundary and holes into a half-edge structure. It
+then inserts bridges to connect each hole to a suitable wall so that the remaining stages can work on one boundary walk. The triangulation stage treats this merged walk as an ordered
+sequence of positions, which allows repeated bridge endpoints to be handled correctly, decomposes the polygon into monotone faces, recovers those faces from the diagonal graph, and
+triangulates them. Finally, the guard computation builds the adjacency graph induced by the triangulation, computes a three-coloring, and outputs the smallest color class as the
+guard set. The result is a complete end-to-end pipeline that takes the original gallery as input and returns both a valid triangulation and a guard placement on the original
+vertices.
 
 \end{document}

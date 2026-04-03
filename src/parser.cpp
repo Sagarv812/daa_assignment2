@@ -5,80 +5,75 @@
 #include <utility>
 #include <vector>
 
-static double getSignedArea(const std::vector<std::pair<double, double>>& coords){
-    double area = 0.0;
-    int n = static_cast<int>(coords.size());
+namespace {
 
-    for(int i = 0; i < n; i++){
-        int next = (i+1)%n;
+using Point = std::pair<double, double>;
+
+double getSignedArea(const std::vector<Point>& coords) {
+    double area = 0.0;
+    const int vertexCount = static_cast<int>(coords.size());
+
+    for (int i = 0; i < vertexCount; ++i) {
+        const int next = (i + 1) % vertexCount;
         area += coords[i].first * coords[next].second - coords[next].first * coords[i].second;
     }
 
-    return area/2.0;
+    return area / 2.0;
 }
 
-void parsePolygonEdges(Face* gallery, bool isOuter){
-    int v0;
-    std::cin >> v0;
-    
-    std::vector<std::pair<double, double>> coords;
-    for(int i = 0; i < v0; i++){
+void normalizeOrientation(std::vector<Point>& coords, bool isOuter) {
+    const double signedArea = getSignedArea(coords);
+    if ((isOuter && signedArea < 0.0) || (!isOuter && signedArea > 0.0)) {
+        std::reverse(coords.begin(), coords.end());
+    }
+}
+
+}  // namespace
+
+void parsePolygonEdges(Face* gallery, bool isOuter) {
+    int vertexCount;
+    std::cin >> vertexCount;
+
+    std::vector<Point> coords;
+    coords.reserve(vertexCount);
+    for (int i = 0; i < vertexCount; ++i) {
         double x, y;
         std::cin >> x >> y;
-        coords.push_back({x, y});
+        coords.emplace_back(x, y);
     }
+
+    normalizeOrientation(coords, isOuter);
 
     std::vector<HalfEdge*> polyEdges;
-    // Adding all the vertices and corresponding originating Half edges
-    // Assuming Counter clockwise input for the Outer Polygon
-    // And assuming Clockwise input for inner holes
-    // (The gallery will be same as the direction of input is being adjusted)
-    double signedArea = getSignedArea(coords);
-    if(isOuter && signedArea < 0){
-        std::reverse(coords.begin(), coords.end());
-    }else if(!isOuter && signedArea > 0){
-        std::reverse(coords.begin(), coords.end());
-    }
-
-    for(int i = 0; i < v0; i++){
-        double x = coords[i].first;
-        double y = coords[i].second;
-
+    polyEdges.reserve(vertexCount);
+    for (const auto& [x, y] : coords) {
         Vertex* v = new Vertex{x, y, nullptr};
         HalfEdge* e = new HalfEdge{v, gallery, nullptr, nullptr, nullptr};
-        
         v->originatingEdge = e;
-
         polyEdges.push_back(e);
     }
 
-    for(int i = 0 ; i < v0; i++){
-        int next = (i+1)%v0;
-        int prev = (i+v0-1)%v0;
-        // Setting next and previous edges accordingly
+    for (int i = 0; i < vertexCount; ++i) {
+        const int next = (i + 1) % vertexCount;
+        const int prev = (i + vertexCount - 1) % vertexCount;
         polyEdges[i]->nextEdge = polyEdges[next];
         polyEdges[i]->prevEdge = polyEdges[prev];
-        // We are not going to be using the twin edge in this scenario
     }
 
-    // Adding them to the gallery according to if they are outer / hole edges
-    if(isOuter)
-        gallery->boundaryEdge = polyEdges[0];
-    else
-        gallery->InnerComponents.push_back(polyEdges[0]);
+    if (isOuter) {
+        gallery->boundaryEdge = polyEdges.front();
+    } else {
+        gallery->InnerComponents.push_back(polyEdges.front());
+    }
 }
 
-Face* parseSingleGallery(){
+Face* parseSingleGallery() {
     Face* gallery = new Face();
-
     parsePolygonEdges(gallery, true);
 
-    // Parsing the inner holes 
-    int h;
-    std::cin >> h;
-
-    // Assuming clockwise vertex input for the inner holes 
-    for(int i = 0; i < h; i++){
+    int holeCount;
+    std::cin >> holeCount;
+    for (int i = 0; i < holeCount; ++i) {
         parsePolygonEdges(gallery, false);
     }
 

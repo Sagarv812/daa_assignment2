@@ -9,15 +9,15 @@
 int main() {
     int T;
     std::cin >> T;
-    
-    while(T--){
+
+    while (T--) {
         Face* gallery = parseSingleGallery();
-        int totalVertices = static_cast<int>(getTotalVertexCount(gallery));
-        int holeCount = static_cast<int>(gallery->InnerComponents.size());
+        const int totalVertices = static_cast<int>(getTotalVertexCount(gallery));
+        const int holeCount = static_cast<int>(gallery->InnerComponents.size());
         mergeHoles(gallery);
 
-        TriangulationResult triangulation = triangulateGallery(gallery);
-        GuardSolution guards = computeGuards(triangulation, totalVertices, holeCount);
+        const TriangulationResult triangulation = triangulateGallery(gallery);
+        const GuardSolution guards = computeGuards(triangulation, totalVertices, holeCount);
         printTriangles(triangulation.triangles);
         printGuards(guards);
     }

@@ -253,6 +253,46 @@ void addDiagonalToMergeHelper(int collidingVertex,
     }
 }
 
+void consumeIncomingEdge(int collidingVertex,
+                         const HalfEdge* incomingEdge,
+                         ActiveEdges& activeEdges,
+                         const std::vector<VertexType>& categories,
+                         const std::vector<PolygonVertex>& polygon,
+                         std::unordered_set<std::uint64_t>& seenDiagonals,
+                         std::vector<std::pair<int, int>>& diagonals) {
+    auto incomingEdge_it = activeEdges.find(incomingEdge);
+    if (incomingEdge_it == activeEdges.end()) {
+        return;
+    }
+
+    const int helperVertex = incomingEdge_it->second;
+    addDiagonalToMergeHelper(
+        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+    activeEdges.erase(incomingEdge_it);
+}
+
+void updateLeftWall(int collidingVertex,
+                    ActiveEdges& activeEdges,
+                    const std::vector<VertexType>& categories,
+                    const std::vector<PolygonVertex>& polygon,
+                    std::unordered_set<std::uint64_t>& seenDiagonals,
+                    std::vector<std::pair<int, int>>& diagonals,
+                    bool alwaysConnect) {
+    auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
+    if (leftWall_it == activeEdges.end()) {
+        return;
+    }
+
+    const int helperVertex = leftWall_it->second;
+    if (alwaysConnect) {
+        addDiagonal(collidingVertex, helperVertex, polygon, seenDiagonals, diagonals);
+    } else {
+        addDiagonalToMergeHelper(
+            collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+    }
+    leftWall_it->second = collidingVertex;
+}
+
 void addDiagonal(int u,
                  int v,
                  const std::vector<PolygonVertex>& polygon,
@@ -270,17 +310,16 @@ void addDiagonal(int u,
     if (samePoint(polygon[u], polygon[v])) {
         return;
     }
-    
-    // REDUNDANCY PREVENTION: Reject diagonal if there is an existing polygon edge 
-    int u_prev = (u - 1 + n) % n;
-    int u_next = (u + 1) % n;
-    if (samePoint(polygon[u_prev], polygon[v]) || samePoint(polygon[u_next], polygon[v])) {
+
+    const int prevU = (u - 1 + n) % n;
+    const int nextU = (u + 1) % n;
+    if (samePoint(polygon[prevU], polygon[v]) || samePoint(polygon[nextU], polygon[v])) {
         return;
     }
 
-    int v_prev = (v - 1 + n) % n;
-    int v_next = (v + 1) % n;
-    if (samePoint(polygon[v_prev], polygon[u]) || samePoint(polygon[v_next], polygon[u])) {
+    const int prevV = (v - 1 + n) % n;
+    const int nextV = (v + 1) % n;
+    if (samePoint(polygon[prevV], polygon[u]) || samePoint(polygon[nextV], polygon[u])) {
         return;
     }
 
@@ -324,63 +363,32 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
                 break;
             }
             case VertexType::END: {
-                auto incomingEdge_it = activeEdges.find(incomingEdge);
-                if (incomingEdge_it != activeEdges.end()) {
-                    const int helperVertex = incomingEdge_it->second;
-                    addDiagonalToMergeHelper(
-                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
-                    activeEdges.erase(incomingEdge_it);
-                }
+                consumeIncomingEdge(
+                    collidingVertex, incomingEdge, activeEdges, categories, polygon, seenDiagonals, diagonals);
                 break;
             }
             case VertexType::SPLIT: {
-                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
-                if (leftWall_it != activeEdges.end()) {
-                    const int helperVertex = leftWall_it->second;
-                    addDiagonal(
-                        collidingVertex, helperVertex, polygon, seenDiagonals, diagonals);
-                    leftWall_it->second = collidingVertex;
-                }
+                updateLeftWall(
+                    collidingVertex, activeEdges, categories, polygon, seenDiagonals, diagonals, true);
                 activeEdges[outgoingEdge] = collidingVertex;
                 break;
             }
             case VertexType::MERGE: {
-                auto incomingEdge_it = activeEdges.find(incomingEdge);
-                if (incomingEdge_it != activeEdges.end()) {
-                    const int helperVertex = incomingEdge_it->second;
-                    addDiagonalToMergeHelper(
-                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
-                    activeEdges.erase(incomingEdge_it);
-                }
-
-                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
-                if (leftWall_it != activeEdges.end()) {
-                    const int helperVertex = leftWall_it->second;
-                    addDiagonalToMergeHelper(
-                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
-                    leftWall_it->second = collidingVertex;
-                }
+                consumeIncomingEdge(
+                    collidingVertex, incomingEdge, activeEdges, categories, polygon, seenDiagonals, diagonals);
+                updateLeftWall(
+                    collidingVertex, activeEdges, categories, polygon, seenDiagonals, diagonals, false);
                 break;
             }
             case VertexType::REGULAR_LEFT: {
-                auto incomingEdge_it = activeEdges.find(incomingEdge);
-                if (incomingEdge_it != activeEdges.end()) {
-                    const int helperVertex = incomingEdge_it->second;
-                    addDiagonalToMergeHelper(
-                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
-                    activeEdges.erase(incomingEdge_it);
-                }
+                consumeIncomingEdge(
+                    collidingVertex, incomingEdge, activeEdges, categories, polygon, seenDiagonals, diagonals);
                 activeEdges[outgoingEdge] = collidingVertex;
                 break;
             }
             case VertexType::REGULAR_RIGHT: {
-                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
-                if (leftWall_it != activeEdges.end()) {
-                    const int helperVertex = leftWall_it->second;
-                    addDiagonalToMergeHelper(
-                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
-                    leftWall_it->second = collidingVertex;
-                }
+                updateLeftWall(
+                    collidingVertex, activeEdges, categories, polygon, seenDiagonals, diagonals, false);
                 break;
             }
         }
@@ -666,7 +674,7 @@ void appendTriangleIfValid(const std::vector<int>& rawFace,
 
 TriangulationResult triangulateGallery(Face* gallery) {
     TriangulationResult result;
-    std::vector<PolygonVertex> polygon = buildMergedPolygon(gallery);
+    const std::vector<PolygonVertex> polygon = buildMergedPolygon(gallery);
     if (polygon.size() < 3) {
         return result;
     }

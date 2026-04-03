@@ -2,8 +2,6 @@
 
 #include <cassert>
 
-using std::sort;
-
 namespace {
 
 std::size_t countVerticesOnCycle(HalfEdge* startEdge) {
@@ -24,6 +22,21 @@ bool higherThenLeft(Vertex* a, Vertex* b) {
         return a->y > b->y;
     }
     return a->x < b->x;
+}
+
+Vertex* findTopmostVertexOnCycle(HalfEdge* startEdge) {
+    Vertex* topMost = startEdge->origin;
+    HalfEdge* currEdge = startEdge->nextEdge;
+
+    while (currEdge != startEdge && currEdge != nullptr) {
+        if (higherThenLeft(currEdge->origin, topMost)) {
+            topMost = currEdge->origin;
+        }
+        currEdge = currEdge->nextEdge;
+    }
+
+    assert(currEdge != nullptr);
+    return topMost;
 }
 
 }  // namespace
@@ -50,26 +63,17 @@ std::vector<Vertex*> getMergedPolygonVertices(Face* gallery) {
 
 std::vector<Vertex*> getTopmostVertices(Face* gallery) {
     std::vector<Vertex*> topmostVertices;
+    topmostVertices.reserve(gallery->InnerComponents.size());
 
     for (HalfEdge* startingEdge : gallery->InnerComponents) {
-        Vertex* topMost = startingEdge->origin;
-
-        HalfEdge* curr = startingEdge->nextEdge;
-        while (curr != startingEdge && curr != nullptr) {
-            if (higherThenLeft(curr->origin, topMost)) {
-                topMost = curr->origin;
-            }
-            curr = curr->nextEdge;
-        }
-
-        assert(curr != nullptr);
-        topmostVertices.push_back(topMost);
+        topmostVertices.push_back(findTopmostVertexOnCycle(startingEdge));
     }
 
-    sort(topmostVertices.begin(), topmostVertices.end(), higherThenLeft);
+    std::sort(topmostVertices.begin(), topmostVertices.end(), higherThenLeft);
 
     return topmostVertices;
 }
+
 std::size_t getTotalVertexCount(Face* gallery) {
     std::size_t totalVertices = 0;
 
