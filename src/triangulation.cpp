@@ -707,7 +707,6 @@ TriangulationResult triangulateGallery(Face* gallery) {
 
 void printTriangles(const std::vector<Triangle>& triangles) {
     if (triangles.empty()) return;
-    std::cout << triangles.size() << '\n';
     for (const Triangle& triangle : triangles) {
         std::cout << triangle[0]->x << ' ' << triangle[0]->y << ' '
                   << triangle[1]->x << ' ' << triangle[1]->y << ' '

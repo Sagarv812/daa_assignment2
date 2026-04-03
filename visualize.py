@@ -49,32 +49,65 @@ def parse_input_file(path: Path) -> List[Case]:
     return cases
 
 
+def expected_triangle_count(case: Case) -> int:
+    outer, holes = case
+    total_vertices = len(outer) + sum(len(hole) for hole in holes)
+    return total_vertices + 2 * len(holes) - 2
+
+
+def is_integer_token(token: str) -> bool:
+    if not token:
+        return False
+    if token[0] in "+-":
+        return token[1:].isdigit()
+    return token.isdigit()
+
+
+def parse_float_list(line: str, expected_count: int, what: str) -> List[float]:
+    parts = line.split()
+    if len(parts) != expected_count:
+        raise ValueError(f"expected {expected_count} values for {what}, got {len(parts)}")
+    return [float(part) for part in parts]
+
+
 def parse_program_output(output: str, cases: Sequence[Case]) -> Tuple[List[List[Triangle]], List[GuardList]]:
-    tokens = output.split()
-    pos = 0
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    line_idx = 0
     all_triangles: List[List[Triangle]] = []
     all_guards: List[GuardList] = []
 
-    for _case in cases:
-        triangle_count = int(tokens[pos])
-        pos += 1
+    for case_index, case in enumerate(cases, start=1):
+        triangle_count = expected_triangle_count(case)
+        if line_idx >= len(lines):
+            raise ValueError(f"missing output for case {case_index}")
+
+        if is_integer_token(lines[line_idx]) and int(lines[line_idx]) == triangle_count:
+            line_idx += 1
+
         triangles: List[Triangle] = []
-        for _ in range(triangle_count):
+        while line_idx < len(lines) and not is_integer_token(lines[line_idx]):
+            values = parse_float_list(lines[line_idx], 6, f"triangle in case {case_index}")
             triangle = (
-                (float(tokens[pos]), float(tokens[pos + 1])),
-                (float(tokens[pos + 2]), float(tokens[pos + 3])),
-                (float(tokens[pos + 4]), float(tokens[pos + 5])),
+                (values[0], values[1]),
+                (values[2], values[3]),
+                (values[4], values[5]),
             )
-            pos += 6
             triangles.append(triangle)
+            line_idx += 1
         all_triangles.append(triangles)
 
-        guard_count = int(tokens[pos])
-        pos += 1
+        if line_idx >= len(lines) or not is_integer_token(lines[line_idx]):
+            raise ValueError(f"missing guard count for case {case_index}")
+
+        guard_count = int(lines[line_idx])
+        line_idx += 1
         guards: GuardList = []
         for _ in range(guard_count):
-            guards.append((float(tokens[pos]), float(tokens[pos + 1])))
-            pos += 2
+            if line_idx >= len(lines):
+                raise ValueError(f"missing guard coordinates for case {case_index}")
+            values = parse_float_list(lines[line_idx], 2, f"guard in case {case_index}")
+            guards.append((values[0], values[1]))
+            line_idx += 1
         all_guards.append(guards)
 
     return all_triangles, all_guards
