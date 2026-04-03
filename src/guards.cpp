@@ -43,7 +43,7 @@ bool colorGraph(const std::vector<TriangleIndices>& triangles,
     }
 
     while (!queue.empty()) {
-        const int vertex = queue.front();
+        int vertex = queue.front();
         queue.pop();
         if (removed[vertex] || degree[vertex] > 2) {
             continue;
@@ -67,7 +67,7 @@ bool colorGraph(const std::vector<TriangleIndices>& triangles,
     }
 
     for (auto it = removalOrder.rbegin(); it != removalOrder.rend(); ++it) {
-        const int vertex = *it;
+        int vertex = *it;
         std::array<bool, 3> blocked = {false, false, false};
         for (int neighbor : adjacency[vertex]) {
             if (color[neighbor] != -1) {

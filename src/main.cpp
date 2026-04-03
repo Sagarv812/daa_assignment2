@@ -7,17 +7,17 @@
 #include "triangulation.hpp"
 
 int main() {
-    int T;
-    std::cin >> T;
+    int testCaseCount;
+    std::cin >> testCaseCount;
 
-    while (T--) {
+    for (int caseIndex = 0; caseIndex < testCaseCount; ++caseIndex) {
         Face* gallery = parseSingleGallery();
-        const int totalVertices = static_cast<int>(getTotalVertexCount(gallery));
-        const int holeCount = static_cast<int>(gallery->InnerComponents.size());
+        int totalVertices = static_cast<int>(getTotalVertexCount(gallery));
+        int holeCount = static_cast<int>(gallery->InnerComponents.size());
         mergeHoles(gallery);
 
-        const TriangulationResult triangulation = triangulateGallery(gallery);
-        const GuardSolution guards = computeGuards(triangulation, totalVertices, holeCount);
+        TriangulationResult triangulation = triangulateGallery(gallery);
+        GuardSolution guards = computeGuards(triangulation, totalVertices, holeCount);
         printTriangles(triangulation.triangles);
         printGuards(guards);
     }

@@ -19,13 +19,13 @@ double getRayIntersectionX(const Vertex* M, const HalfEdge* E) {
         return DBL_MAX;
     }
 
-    const double minY = std::min(A->y, B->y);
-    const double maxY = std::max(A->y, B->y);
+    double minY = std::min(A->y, B->y);
+    double maxY = std::max(A->y, B->y);
     if (M->y < minY || M->y >= maxY) {
         return DBL_MAX;
     }
 
-    const double x_int = A->x + (B->x - A->x) * (M->y - A->y) / (B->y - A->y);
+    double x_int = A->x + (B->x - A->x) * (M->y - A->y) / (B->y - A->y);
     if (x_int < M->x) {
         return DBL_MAX;
     }
@@ -39,8 +39,8 @@ struct EdgeComparator {
             return false;
         }
 
-        const double minaY = std::min(a->origin->y, a->nextEdge->origin->y);
-        const double minbY = std::min(b->origin->y, b->nextEdge->origin->y);
+        double minaY = std::min(a->origin->y, a->nextEdge->origin->y);
+        double minbY = std::min(b->origin->y, b->nextEdge->origin->y);
         double yRay = std::max(minaY, minbY);
 
         Vertex rayVObj{-DBL_MAX, yRay, nullptr};
@@ -49,9 +49,9 @@ struct EdgeComparator {
         double int_b = getRayIntersectionX(rayV, b);
 
         if (int_a == int_b) {
-            const double maxaY = std::max(a->origin->y, a->nextEdge->origin->y);
-            const double maxbY = std::max(b->origin->y, b->nextEdge->origin->y);
-            const double yRay2 = std::min(maxaY, maxbY);
+            double maxaY = std::max(a->origin->y, a->nextEdge->origin->y);
+            double maxbY = std::max(b->origin->y, b->nextEdge->origin->y);
+            double yRay2 = std::min(maxaY, maxbY);
             rayV->y = (yRay2 + yRay) / 2;
 
             int_a = getRayIntersectionX(rayV, a);
@@ -322,7 +322,7 @@ void buildBridge(Vertex* M, Vertex* target, Face* gallery, VertexOutgoingIndex& 
 
 void mergeHoles(Face* gallery) {
     std::vector<Vertex*> topmostVertices = getTopmostVertices(gallery);
-    const auto compY = [](Vertex* a, Vertex* b) {
+    auto compY = [](Vertex* a, Vertex* b) {
         if (a->y != b->y) {
             return a->y > b->y;
         }

@@ -11,10 +11,10 @@ using Point = std::pair<double, double>;
 
 double getSignedArea(const std::vector<Point>& coords) {
     double area = 0.0;
-    const int vertexCount = static_cast<int>(coords.size());
+    int vertexCount = static_cast<int>(coords.size());
 
     for (int i = 0; i < vertexCount; ++i) {
-        const int next = (i + 1) % vertexCount;
+        int next = (i + 1) % vertexCount;
         area += coords[i].first * coords[next].second - coords[next].first * coords[i].second;
     }
 
@@ -22,7 +22,7 @@ double getSignedArea(const std::vector<Point>& coords) {
 }
 
 void normalizeOrientation(std::vector<Point>& coords, bool isOuter) {
-    const double signedArea = getSignedArea(coords);
+    double signedArea = getSignedArea(coords);
     if ((isOuter && signedArea < 0.0) || (!isOuter && signedArea > 0.0)) {
         std::reverse(coords.begin(), coords.end());
     }
@@ -54,8 +54,8 @@ void parsePolygonEdges(Face* gallery, bool isOuter) {
     }
 
     for (int i = 0; i < vertexCount; ++i) {
-        const int next = (i + 1) % vertexCount;
-        const int prev = (i + vertexCount - 1) % vertexCount;
+        int next = (i + 1) % vertexCount;
+        int prev = (i + vertexCount - 1) % vertexCount;
         polyEdges[i]->nextEdge = polyEdges[next];
         polyEdges[i]->prevEdge = polyEdges[prev];
     }

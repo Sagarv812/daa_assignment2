@@ -33,7 +33,7 @@ bool samePoint(const PolygonVertex& a, const PolygonVertex& b) {
 
 double polygonArea(const std::vector<int>& indices, const std::vector<PolygonVertex>& polygon) {
     double area = 0.0;
-    const int n = static_cast<int>(indices.size());
+    int n = static_cast<int>(indices.size());
     for (int i = 0; i < n; ++i) {
         const PolygonVertex& a = polygon[indices[i]];
         const PolygonVertex& b = polygon[indices[(i + 1) % n]];
@@ -44,7 +44,7 @@ double polygonArea(const std::vector<int>& indices, const std::vector<PolygonVer
 
 double polygonArea(const std::vector<PolygonVertex>& polygon) {
     double area = 0.0;
-    const int n = static_cast<int>(polygon.size());
+    int n = static_cast<int>(polygon.size());
     for (int i = 0; i < n; ++i) {
         const PolygonVertex& a = polygon[i];
         const PolygonVertex& b = polygon[(i + 1) % n];
@@ -59,9 +59,9 @@ std::vector<PolygonVertex> buildOuterplanarEmbedding(int vertexCount) {
         return embedding;
     }
 
-    const double angleStep = (2.0 * std::acos(-1.0)) / static_cast<double>(vertexCount);
+    double angleStep = (2.0 * std::acos(-1.0)) / static_cast<double>(vertexCount);
     for (int i = 0; i < vertexCount; ++i) {
-        const double angle = angleStep * static_cast<double>(i);
+        double angle = angleStep * static_cast<double>(i);
         embedding[i] = {std::cos(angle), std::sin(angle), nullptr};
     }
 
@@ -129,14 +129,14 @@ std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
 }
 
 VertexType classifyVertex(const std::vector<PolygonVertex>& polygon, int idx) {
-    const int n = static_cast<int>(polygon.size());
+    int n = static_cast<int>(polygon.size());
     const PolygonVertex& prev = polygon[(idx - 1 + n) % n];
     const PolygonVertex& curr = polygon[idx];
     const PolygonVertex& next = polygon[(idx + 1) % n];
 
-    const bool prevBelow = isBelow(prev, curr);
-    const bool nextBelow = isBelow(next, curr);
-    const bool isConvex = ccw(prev, curr, next) > eps;
+    bool prevBelow = isBelow(prev, curr);
+    bool nextBelow = isBelow(next, curr);
+    bool isConvex = ccw(prev, curr, next) > eps;
 
     if (prevBelow && nextBelow) {
         return isConvex ? VertexType::START : VertexType::SPLIT;
@@ -265,7 +265,7 @@ void consumeIncomingEdge(int collidingVertex,
         return;
     }
 
-    const int helperVertex = incomingEdge_it->second;
+    int helperVertex = incomingEdge_it->second;
     addDiagonalToMergeHelper(
         collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
     activeEdges.erase(incomingEdge_it);
@@ -283,7 +283,7 @@ void updateLeftWall(int collidingVertex,
         return;
     }
 
-    const int helperVertex = leftWall_it->second;
+    int helperVertex = leftWall_it->second;
     if (alwaysConnect) {
         addDiagonal(collidingVertex, helperVertex, polygon, seenDiagonals, diagonals);
     } else {
