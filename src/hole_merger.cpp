@@ -75,7 +75,18 @@ struct EdgeComparator {
     }
 };
 
-auto findClosestWallToLeft(Vertex* M, std::map<HalfEdge*,Vertex*, EdgeComparator>& activeEdges){
+struct HelperState {
+    Vertex* helper;
+    double lockedAtY;
+    int lockedComponentId;
+    bool lockSameLevel;
+    Vertex* minLockedHelper;
+    Vertex* maxLockedHelper;
+};
+
+using ActiveEdges = std::map<HalfEdge*, HelperState, EdgeComparator>;
+
+auto findClosestWallToLeft(Vertex* M, ActiveEdges& activeEdges){
     
     // Making the dummyEdge for doing Binary Search
     Vertex vTop = {M->x, M->y - 1.0, nullptr};
@@ -90,7 +101,7 @@ auto findClosestWallToLeft(Vertex* M, std::map<HalfEdge*,Vertex*, EdgeComparator
     if(it != activeEdges.begin()){
         it--;
         return it;
-    }   
+    }
     // Could not find right wall :( 
     return activeEdges.end();
 }
@@ -100,6 +111,7 @@ bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, d
 namespace {
 
 constexpr double kTwoPi = 6.28318530717958647692;
+constexpr double kHelperLockEps = 1e-9;
 
 double getVectorAngle(double dx, double dy) {
     double angle = std::atan2(dy, dx);
@@ -152,6 +164,19 @@ void addCycleToOutgoingIndex(HalfEdge* startEdge, VertexOutgoingIndex& outgoingI
     } while (currEdge != startEdge && currEdge != nullptr);
 }
 
+void addCycleVerticesToComponentMap(HalfEdge* startEdge, int componentId,
+                                    std::unordered_map<Vertex*, int>& vertexComponentIds) {
+    if (startEdge == nullptr) {
+        return;
+    }
+
+    HalfEdge* currEdge = startEdge;
+    do {
+        vertexComponentIds[currEdge->origin] = componentId;
+        currEdge = currEdge->nextEdge;
+    } while (currEdge != startEdge && currEdge != nullptr);
+}
+
 void addOutgoingEdgeToIndex(HalfEdge* edge, VertexOutgoingIndex& outgoingIndex) {
     outgoingIndex[edge->origin].emplace(makeOutgoingKey(edge), edge);
 }
@@ -168,6 +193,59 @@ bool bridgeFitsSector(HalfEdge* e_out, Vertex* v) {
 
     return isInsideSector(outX, outY, inX, inY, bX, bY);
 }
+
+HelperState makeUnlockedHelper(Vertex* helper) {
+    return {helper, helper != nullptr ? helper->y : 0.0, -1, false, helper, helper};
+}
+
+void setUnlockedHelper(HelperState& state, Vertex* helper) {
+    state = makeUnlockedHelper(helper);
+}
+
+void setHoleTopHelper(HelperState& state, Vertex* helper, int componentId) {
+    state = {helper, helper != nullptr ? helper->y : 0.0, componentId, true, helper, helper};
+}
+
+bool canOverwriteWithOrdinary(const HelperState& state, Vertex* candidate, int candidateComponentId) {
+    if (!state.lockSameLevel) {
+        return true;
+    }
+    if (candidate->y < state.lockedAtY - kHelperLockEps) {
+        return true;
+    }
+    return std::abs(candidate->y - state.lockedAtY) <= kHelperLockEps &&
+           candidateComponentId == state.lockedComponentId;
+}
+
+void applyOrdinaryHelperUpdate(HelperState& state, Vertex* candidate, int candidateComponentId) {
+    if (!state.lockSameLevel || candidate->y < state.lockedAtY - kHelperLockEps) {
+        setUnlockedHelper(state, candidate);
+        return;
+    }
+
+    state.helper = candidate;
+    state.lockedComponentId = candidateComponentId;
+    if (state.minLockedHelper == nullptr || candidate->x < state.minLockedHelper->x) {
+        state.minLockedHelper = candidate;
+    }
+    if (state.maxLockedHelper == nullptr || candidate->x > state.maxLockedHelper->x) {
+        state.maxLockedHelper = candidate;
+    }
+}
+
+Vertex* getBridgeTarget(const HelperState& state, Vertex* queryVertex) {
+    if (!state.lockSameLevel || state.minLockedHelper == nullptr || state.maxLockedHelper == nullptr) {
+        return state.helper;
+    }
+
+    double distToMin = std::abs(queryVertex->x - state.minLockedHelper->x);
+    double distToMax = std::abs(queryVertex->x - state.maxLockedHelper->x);
+    if (distToMin <= distToMax) {
+        return state.minLockedHelper;
+    }
+    return state.maxLockedHelper;
+}
+
 }  // namespace
 
 bool isInsideSector(double v1X, double v1Y, double v2X, double v2Y, double bX, double bY) {
@@ -262,9 +340,14 @@ void mergeHoles(Face* gallery){
     for (HalfEdge* holeEdgeStart : gallery->InnerComponents) {
         addCycleToOutgoingIndex(holeEdgeStart, outgoingIndex);
     }
+    std::unordered_map<Vertex*, int> vertexComponentIds;
+    addCycleVerticesToComponentMap(gallery->boundaryEdge, 0, vertexComponentIds);
+    for (int i = 0; i < static_cast<int>(gallery->InnerComponents.size()); ++i) {
+        addCycleVerticesToComponentMap(gallery->InnerComponents[i], i + 1, vertexComponentIds);
+    }
 
     // Making Active Edges
-    std::map<HalfEdge*,Vertex* ,EdgeComparator> activeEdges;
+    ActiveEdges activeEdges;
 
     int nextHoleIdx = 0;
 
@@ -272,13 +355,15 @@ void mergeHoles(Face* gallery){
     for(Vertex* collidingVertex : sweepVertices){
         auto preLeftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
         HalfEdge* preLeftWall = (preLeftWall_it != activeEdges.end()) ? preLeftWall_it->first : nullptr;
+        bool didProcessHoleTop = false;
 
         if(nextHoleIdx < (int)topmostVertices.size() && collidingVertex == topmostVertices[nextHoleIdx]){
             if(preLeftWall_it != activeEdges.end()){
-                Vertex* Target = preLeftWall_it->second;
+                Vertex* Target = getBridgeTarget(preLeftWall_it->second, collidingVertex);
                  buildBridge(collidingVertex, Target, gallery, outgoingIndex);
             }
 
+            didProcessHoleTop = true;
             nextHoleIdx++;
         }
 
@@ -286,20 +371,27 @@ void mergeHoles(Face* gallery){
         HalfEdge* outgoingEdge = collidingVertex->originatingEdge;
 
         if(incomingEdge->origin->y > collidingVertex->y) activeEdges.erase(incomingEdge);
-        else if(incomingEdge->origin->y < collidingVertex->y) activeEdges[incomingEdge] = collidingVertex;
+        else if(incomingEdge->origin->y < collidingVertex->y) activeEdges[incomingEdge] = makeUnlockedHelper(collidingVertex);
 
         if(outgoingEdge->nextEdge->origin->y > collidingVertex->y) activeEdges.erase(outgoingEdge);
-        else if(outgoingEdge->nextEdge->origin->y < collidingVertex->y) activeEdges[outgoingEdge] = collidingVertex;
+        else if(outgoingEdge->nextEdge->origin->y < collidingVertex->y) activeEdges[outgoingEdge] = makeUnlockedHelper(collidingVertex);
 
         auto leftWall_it = findClosestWallToLeft(collidingVertex, activeEdges);
         if(leftWall_it != activeEdges.end()){
-            leftWall_it->second = collidingVertex;
+            if(didProcessHoleTop){
+                setHoleTopHelper(leftWall_it->second, collidingVertex, vertexComponentIds[collidingVertex]);
+            }else if(canOverwriteWithOrdinary(leftWall_it->second, collidingVertex,
+                                              vertexComponentIds[collidingVertex])){
+                applyOrdinaryHelperUpdate(leftWall_it->second, collidingVertex,
+                                          vertexComponentIds[collidingVertex]);
+            }
         }
 
-        if(preLeftWall != nullptr){
+        if(didProcessHoleTop && preLeftWall != nullptr){
             auto preservedLeftWall_it = activeEdges.find(preLeftWall);
             if(preservedLeftWall_it != activeEdges.end()){
-                preservedLeftWall_it->second = collidingVertex;
+                setHoleTopHelper(preservedLeftWall_it->second, collidingVertex,
+                                 vertexComponentIds[collidingVertex]);
             }
         }
         

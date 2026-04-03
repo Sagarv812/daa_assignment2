@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
-#include <limits>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -22,15 +21,6 @@ struct PolygonVertex {
     double x;
     double y;
     Vertex* original;
-};
-
-struct SweepEdge {
-    double x1;
-    double y1;
-    double x2;
-    double y2;
-    int from;
-    int to;
 };
 
 double ccw(const PolygonVertex& a, const PolygonVertex& b, const PolygonVertex& c) {
@@ -93,148 +83,42 @@ bool comesEarlierInSweepOrder(const PolygonVertex& a, const PolygonVertex& b) {
     return a.x < b.x;
 }
 
-std::vector<const HalfEdge*> collectBoundaryEdges(HalfEdge* startEdge) {
-    std::vector<const HalfEdge*> edges;
-    if (startEdge == nullptr) {
-        return edges;
+void buildSweepBoundary(const std::vector<PolygonVertex>& polygon,
+                        std::vector<Vertex>& sweepBoundaryVertices,
+                        std::vector<HalfEdge>& sweepBoundaryEdges,
+                        std::unordered_map<const HalfEdge*, int>& edgeIndex) {
+    const int n = static_cast<int>(polygon.size());
+    sweepBoundaryVertices.resize(n);
+    sweepBoundaryEdges.resize(n);
+    edgeIndex.reserve(static_cast<std::size_t>(n));
+
+    for (int i = 0; i < n; ++i) {
+        sweepBoundaryVertices[i] = {polygon[i].x, polygon[i].y, nullptr};
     }
 
-    const HalfEdge* currEdge = startEdge;
-    do {
-        edges.push_back(currEdge);
-        currEdge = currEdge->nextEdge;
-    } while (currEdge != startEdge && currEdge != nullptr);
+    for (int i = 0; i < n; ++i) {
+        const int next = (i + 1) % n;
+        const int prev = (i - 1 + n) % n;
 
-    assert(currEdge != nullptr);
-    return edges;
-}
-
-bool isBridgeEdge(const HalfEdge* edge) {
-    return edge != nullptr && edge->twin != nullptr;
-}
-
-std::pair<double, double> edgeDirection(const HalfEdge* edge) {
-    const double dx = edge->nextEdge->origin->x - edge->origin->x;
-    const double dy = edge->nextEdge->origin->y - edge->origin->y;
-    const double length = std::hypot(dx, dy);
-    if (length <= eps) {
-        return {0.0, 0.0};
+        sweepBoundaryEdges[i] = {
+            &sweepBoundaryVertices[i],
+            nullptr,
+            &sweepBoundaryEdges[next],
+            &sweepBoundaryEdges[prev],
+            nullptr,
+        };
+        sweepBoundaryVertices[i].originatingEdge = &sweepBoundaryEdges[i];
+        edgeIndex[&sweepBoundaryEdges[i]] = i;
     }
-
-    return {dx / length, dy / length};
-}
-
-std::pair<double, double> leftNormal(const HalfEdge* edge) {
-    const auto [dx, dy] = edgeDirection(edge);
-    return {-dy, dx};
-}
-
-double chooseSymbolicOffset(const std::vector<const HalfEdge*>& boundaryEdges) {
-    if (boundaryEdges.empty()) {
-        return 0.0;
-    }
-
-    double minX = boundaryEdges.front()->origin->x;
-    double maxX = minX;
-    double minY = boundaryEdges.front()->origin->y;
-    double maxY = minY;
-    double minPositiveEdgeLength = std::numeric_limits<double>::infinity();
-
-    for (const HalfEdge* edge : boundaryEdges) {
-        const double x1 = edge->origin->x;
-        const double y1 = edge->origin->y;
-        const double x2 = edge->nextEdge->origin->x;
-        const double y2 = edge->nextEdge->origin->y;
-
-        minX = std::min({minX, x1, x2});
-        maxX = std::max({maxX, x1, x2});
-        minY = std::min({minY, y1, y2});
-        maxY = std::max({maxY, y1, y2});
-
-        const double length = std::hypot(x2 - x1, y2 - y1);
-        if (length > eps) {
-            minPositiveEdgeLength = std::min(minPositiveEdgeLength, length);
-        }
-    }
-
-    const double bboxScale = std::max({maxX - minX, maxY - minY, 1.0});
-    double offset = bboxScale * 1e-7;
-    if (minPositiveEdgeLength < std::numeric_limits<double>::infinity()) {
-        offset = std::min(offset, minPositiveEdgeLength * 1e-4);
-    }
-
-    return std::max(offset, bboxScale * 32.0 * eps);
-}
-
-PolygonVertex buildOffsetOccurrence(const HalfEdge* edge, double symbolicOffset) {
-    const HalfEdge* prev = edge->prevEdge;
-    const bool prevBridge = isBridgeEdge(prev);
-    const bool currBridge = isBridgeEdge(edge);
-
-    const double x = edge->origin->x;
-    const double y = edge->origin->y;
-    if (!prevBridge && !currBridge) {
-        return {x, y, edge->origin};
-    }
-
-    const auto [prevDx, prevDy] = edgeDirection(prev);
-    const auto [currDx, currDy] = edgeDirection(edge);
-    const auto [prevNx, prevNy] = leftNormal(prev);
-    const auto [currNx, currNy] = leftNormal(edge);
-
-    const double q1x = x + (prevBridge ? symbolicOffset * prevNx : 0.0);
-    const double q1y = y + (prevBridge ? symbolicOffset * prevNy : 0.0);
-    const double q2x = x + (currBridge ? symbolicOffset * currNx : 0.0);
-    const double q2y = y + (currBridge ? symbolicOffset * currNy : 0.0);
-
-    const double det = prevDx * currDy - prevDy * currDx;
-    if (std::abs(det) > eps) {
-        const double diffX = q2x - q1x;
-        const double diffY = q2y - q1y;
-        const double t = (diffX * currDy - diffY * currDx) / det;
-        return {q1x + t * prevDx, q1y + t * prevDy, edge->origin};
-    }
-
-    double offsetX = 0.0;
-    double offsetY = 0.0;
-    if (prevBridge) {
-        offsetX += prevNx;
-        offsetY += prevNy;
-    }
-    if (currBridge) {
-        offsetX += currNx;
-        offsetY += currNy;
-    }
-    double length = std::hypot(offsetX, offsetY);
-    if (length <= eps && currBridge) {
-        offsetX = currNx;
-        offsetY = currNy;
-        length = std::hypot(offsetX, offsetY);
-    }
-    if (length <= eps && prevBridge) {
-        offsetX = prevNx;
-        offsetY = prevNy;
-        length = std::hypot(offsetX, offsetY);
-    }
-    if (length <= eps) {
-        return {x, y, edge->origin};
-    }
-
-    return {
-        x + symbolicOffset * offsetX / length,
-        y + symbolicOffset * offsetY / length,
-        edge->origin,
-    };
 }
 
 std::vector<PolygonVertex> buildMergedPolygon(Face* gallery) {
-    std::vector<const HalfEdge*> boundaryEdges = collectBoundaryEdges(gallery->boundaryEdge);
+    const std::vector<Vertex*> boundaryVertices = getMergedPolygonVertices(gallery);
     std::vector<PolygonVertex> polygon;
-    polygon.reserve(boundaryEdges.size());
+    polygon.reserve(boundaryVertices.size());
 
-    const double symbolicOffset = chooseSymbolicOffset(boundaryEdges);
-    for (const HalfEdge* edge : boundaryEdges) {
-        polygon.push_back(buildOffsetOccurrence(edge, symbolicOffset));
+    for (Vertex* vertex : boundaryVertices) {
+        polygon.push_back({vertex->x, vertex->y, vertex});
     }
 
     if (polygonArea(polygon) < 0.0) {
@@ -265,24 +149,41 @@ VertexType classifyVertex(const std::vector<PolygonVertex>& polygon, int idx) {
     return isAbove(prev, curr) ? VertexType::REGULAR_LEFT : VertexType::REGULAR_RIGHT;
 }
 
-double xIntersectionAtY(const SweepEdge* edge, double y) {
-    if (std::abs(edge->y1 - edge->y2) <= eps) {
-        return std::min(edge->x1, edge->x2);
+double xIntersectionAtY(const HalfEdge* edge, double y) {
+    const Vertex* origin = edge->origin;
+    const Vertex* next = edge->nextEdge->origin;
+
+    if (std::abs(origin->y - next->y) <= eps) {
+        return std::min(origin->x, next->x);
     }
 
-    return edge->x1 + (edge->x2 - edge->x1) * (y - edge->y1) / (edge->y2 - edge->y1);
+    return origin->x + (next->x - origin->x) * (y - origin->y) / (next->y - origin->y);
 }
 
 struct EdgeComparator {
-    bool operator()(const SweepEdge* a, const SweepEdge* b) const {
+    const std::unordered_map<const HalfEdge*, int>* edgeIndex;
+
+    int edgeFrom(const HalfEdge* edge) const {
+        auto it = edgeIndex->find(edge);
+        if (it == edgeIndex->end()) {
+            return -1;
+        }
+        return it->second;
+    }
+
+    int edgeTo(const HalfEdge* edge) const {
+        return edgeFrom(edge->nextEdge);
+    }
+
+    bool operator()(const HalfEdge* a, const HalfEdge* b) const {
         if (a == b) {
             return false;
         }
 
-        const double minAY = std::min(a->y1, a->y2);
-        const double minBY = std::min(b->y1, b->y2);
-        const double maxAY = std::max(a->y1, a->y2);
-        const double maxBY = std::max(b->y1, b->y2);
+        const double minAY = std::min(a->origin->y, a->nextEdge->origin->y);
+        const double minBY = std::min(b->origin->y, b->nextEdge->origin->y);
+        const double maxAY = std::max(a->origin->y, a->nextEdge->origin->y);
+        const double maxBY = std::max(b->origin->y, b->nextEdge->origin->y);
 
         double yRay = std::max(minAY, minBY);
         if (std::abs(yRay - maxAY) <= eps || std::abs(yRay - maxBY) <= eps) {
@@ -296,25 +197,24 @@ struct EdgeComparator {
             return xA < xB;
         }
 
-        if (a->from != b->from) {
-            return a->from < b->from;
+        const int fromA = edgeFrom(a);
+        const int fromB = edgeFrom(b);
+        if (fromA != fromB) {
+            return fromA < fromB;
         }
-        return a->to < b->to;
+        return edgeTo(a) < edgeTo(b);
     }
 };
 
-using ActiveEdges = std::map<const SweepEdge*, int, EdgeComparator>;
+using ActiveEdges = std::map<const HalfEdge*, int, EdgeComparator>;
 using ActiveEdgeIterator = ActiveEdges::iterator;
 
-ActiveEdgeIterator findClosestEdgeToLeft(const PolygonVertex& vertex, ActiveEdges& activeEdges) {
-    SweepEdge dummy{
-        vertex.x,
-        vertex.y - 1.0,
-        vertex.x,
-        vertex.y + 1.0,
-        -1,
-        -1,
-    };
+ActiveEdgeIterator findClosestWallToLeft(const PolygonVertex& collidingVertex,
+                                         ActiveEdges& activeEdges) {
+    Vertex vTop = {collidingVertex.x, collidingVertex.y - 1.0, nullptr};
+    Vertex vBot = {collidingVertex.x, collidingVertex.y + 1.0, nullptr};
+    HalfEdge eBot = {&vBot, nullptr, nullptr, nullptr, nullptr};
+    HalfEdge dummy = {&vTop, nullptr, &eBot, nullptr, nullptr};
 
     auto it = activeEdges.upper_bound(&dummy);
     if (it == activeEdges.begin()) {
@@ -334,6 +234,23 @@ std::uint64_t encodeUndirectedEdge(int u, int v) {
 
 bool areAdjacent(int u, int v, int n) {
     return ((u + 1) % n == v) || ((v + 1) % n == u);
+}
+
+void addDiagonal(int u,
+                 int v,
+                 const std::vector<PolygonVertex>& polygon,
+                 std::unordered_set<std::uint64_t>& seenDiagonals,
+                 std::vector<std::pair<int, int>>& diagonals);
+
+void addDiagonalToMergeHelper(int collidingVertex,
+                              int helperVertex,
+                              const std::vector<VertexType>& categories,
+                              const std::vector<PolygonVertex>& polygon,
+                              std::unordered_set<std::uint64_t>& seenDiagonals,
+                              std::vector<std::pair<int, int>>& diagonals) {
+    if (categories[helperVertex] == VertexType::MERGE) {
+        addDiagonal(collidingVertex, helperVertex, polygon, seenDiagonals, diagonals);
+    }
 }
 
 void addDiagonal(int u,
@@ -378,96 +295,91 @@ std::vector<std::pair<int, int>> makeMonotone(const std::vector<PolygonVertex>& 
     std::vector<std::pair<int, int>> diagonals;
     const int n = static_cast<int>(polygon.size());
 
-    std::vector<int> order(n);
+    std::vector<int> sweepVertices(n);
     for (int i = 0; i < n; ++i) {
-        order[i] = i;
+        sweepVertices[i] = i;
     }
 
-    std::sort(order.begin(), order.end(), [&polygon](int a, int b) {
+    std::sort(sweepVertices.begin(), sweepVertices.end(), [&polygon](int a, int b) {
         return comesEarlierInSweepOrder(polygon[a], polygon[b]);
     });
 
-    std::vector<SweepEdge> edges(n);
-    for (int i = 0; i < n; ++i) {
-        const int next = (i + 1) % n;
-        edges[i] = SweepEdge{
-            polygon[i].x,
-            polygon[i].y,
-            polygon[next].x,
-            polygon[next].y,
-            i,
-            next,
-        };
-    }
+    std::vector<Vertex> sweepBoundaryVertices;
+    std::vector<HalfEdge> sweepBoundaryEdges;
+    std::unordered_map<const HalfEdge*, int> edgeIndex;
+    buildSweepBoundary(polygon, sweepBoundaryVertices, sweepBoundaryEdges, edgeIndex);
 
-    ActiveEdges activeEdges;
+    // Maps an active sweep edge to its current helper vertex.
+    ActiveEdges activeEdges((EdgeComparator{&edgeIndex}));
     std::unordered_set<std::uint64_t> seenDiagonals;
 
-    for (int idx : order) {
-        const int prev = (idx - 1 + n) % n;
-        const SweepEdge* incoming = &edges[prev];
-        const SweepEdge* outgoing = &edges[idx];
+    for (int collidingVertex : sweepVertices) {
+        const int previousVertex = (collidingVertex - 1 + n) % n;
+        const HalfEdge* incomingEdge = &sweepBoundaryEdges[previousVertex];
+        const HalfEdge* outgoingEdge = &sweepBoundaryEdges[collidingVertex];
 
-        switch (categories[idx]) {
+        switch (categories[collidingVertex]) {
             case VertexType::START: {
-                activeEdges[outgoing] = idx;
+                activeEdges[outgoingEdge] = collidingVertex;
                 break;
             }
             case VertexType::END: {
-                auto inIt = activeEdges.find(incoming);
-                if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexType::MERGE) {
-                        addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
-                    }
-                    activeEdges.erase(inIt);
+                auto incomingEdge_it = activeEdges.find(incomingEdge);
+                if (incomingEdge_it != activeEdges.end()) {
+                    const int helperVertex = incomingEdge_it->second;
+                    addDiagonalToMergeHelper(
+                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+                    activeEdges.erase(incomingEdge_it);
                 }
                 break;
             }
             case VertexType::SPLIT: {
-                auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
-                if (leftIt != activeEdges.end()) {
-                    addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
-                    leftIt->second = idx;
+                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
+                if (leftWall_it != activeEdges.end()) {
+                    const int helperVertex = leftWall_it->second;
+                    addDiagonal(
+                        collidingVertex, helperVertex, polygon, seenDiagonals, diagonals);
+                    leftWall_it->second = collidingVertex;
                 }
-                activeEdges[outgoing] = idx;
+                activeEdges[outgoingEdge] = collidingVertex;
                 break;
             }
             case VertexType::MERGE: {
-                auto inIt = activeEdges.find(incoming);
-                if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexType::MERGE) {
-                        addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
-                    }
-                    activeEdges.erase(inIt);
+                auto incomingEdge_it = activeEdges.find(incomingEdge);
+                if (incomingEdge_it != activeEdges.end()) {
+                    const int helperVertex = incomingEdge_it->second;
+                    addDiagonalToMergeHelper(
+                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+                    activeEdges.erase(incomingEdge_it);
                 }
 
-                auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
-                if (leftIt != activeEdges.end()) {
-                    if (categories[leftIt->second] == VertexType::MERGE) {
-                        addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
-                    }
-                    leftIt->second = idx;
+                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
+                if (leftWall_it != activeEdges.end()) {
+                    const int helperVertex = leftWall_it->second;
+                    addDiagonalToMergeHelper(
+                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+                    leftWall_it->second = collidingVertex;
                 }
                 break;
             }
             case VertexType::REGULAR_LEFT: {
-                auto inIt = activeEdges.find(incoming);
-                if (inIt != activeEdges.end()) {
-                    if (categories[inIt->second] == VertexType::MERGE) {
-                        addDiagonal(idx, inIt->second, polygon, seenDiagonals, diagonals);
-                    }
-                    activeEdges.erase(inIt);
+                auto incomingEdge_it = activeEdges.find(incomingEdge);
+                if (incomingEdge_it != activeEdges.end()) {
+                    const int helperVertex = incomingEdge_it->second;
+                    addDiagonalToMergeHelper(
+                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+                    activeEdges.erase(incomingEdge_it);
                 }
-                activeEdges[outgoing] = idx;
+                activeEdges[outgoingEdge] = collidingVertex;
                 break;
             }
             case VertexType::REGULAR_RIGHT: {
-                auto leftIt = findClosestEdgeToLeft(polygon[idx], activeEdges);
-                if (leftIt != activeEdges.end()) {
-                    if (categories[leftIt->second] == VertexType::MERGE) {
-                        addDiagonal(idx, leftIt->second, polygon, seenDiagonals, diagonals);
-                    }
-                    leftIt->second = idx;
+                auto leftWall_it = findClosestWallToLeft(polygon[collidingVertex], activeEdges);
+                if (leftWall_it != activeEdges.end()) {
+                    const int helperVertex = leftWall_it->second;
+                    addDiagonalToMergeHelper(
+                        collidingVertex, helperVertex, categories, polygon, seenDiagonals, diagonals);
+                    leftWall_it->second = collidingVertex;
                 }
                 break;
             }
